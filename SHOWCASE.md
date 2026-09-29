@@ -6,6 +6,8 @@ person** when it's risky, **recorded** in a tamper-evident audit trail, and can 
 
 ## Run it
 
+- **Just watch:** `python demo/live_demo.py` runs this whole scenario by itself (a demo manager approves and
+  rejects), resetting every hour. Or click *Open in Codespaces* in the README.
 - **Try it on your PC:** `start.bat` (Windows) or `./start.sh`. It prints your keys and opens the dashboard.
 - **24/7 on a server:** copy the folder to any Linux server (a free Oracle Cloud VM works) and run `bash install.sh`.
   You get `https://<your-server-ip>.sslip.io/dashboard` with HTTPS, no domain needed.
@@ -66,7 +68,7 @@ Anything with an MCP connector (Stripe, GitHub, Gmail, Slack, Linear, Notion, da
 
     .venv\Scripts\python connect.py wrap --agent claude-code --app stripe --env STRIPE_SECRET_KEY=sk_... -- npx -y @stripe/mcp --tools=all
 
-Calls show up as `stripe.<tool>`, and rules in `rules.yaml` can target them (e.g. refunds over $100 → a person).
+Calls show up as `stripe.<tool>`, and rules in `rules.yaml` can target them (e.g. every `stripe.create_refund` → a person).
 
 ## Undo
 

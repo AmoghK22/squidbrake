@@ -1,0 +1,13 @@
+{
+  "name": "Squidbrake live demo",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "postCreateCommand": "pip install --user -r requirements.txt",
+  "postAttachCommand": { "demo": "python demo/live_demo.py" },
+  "forwardPorts": [8090],
+  "portsAttributes": {
+    "8090": { "label": "Squidbrake demo", "onAutoForward": "openBrowser" }
+  },
+  "customizations": {
+    "codespaces": { "openFiles": ["SHOWCASE.md"] }
+  }
+}

@@ -37,6 +37,14 @@ See [SHOWCASE.md](SHOWCASE.md) for a 5-minute demo with a sandbox company.
 <sub>Approve or reject from your phone with one tap.</sub></td>
 </tr></table>
 
+## See it live, nothing to install
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/batrapulkit/squidbrake?quickstart=1)
+
+Click the button and the live demo starts in your browser (free with a GitHub account): a sandbox company's AI
+support agent works its inbox while you watch. A scam wire is blocked, refunds wait for a person, and a demo
+manager approves or rejects them. On your own machine: `pip install -r requirements.txt` then `python demo/live_demo.py`.
+
 ## Try it in 30 seconds
 
 ```bash

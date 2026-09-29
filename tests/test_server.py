@@ -195,6 +195,16 @@ def test_me(c):
                                                     "kind": "person", "roles": ["admin"], "is_admin": True}
 
 
+
+def test_read_only_keys(c, monkeypatch):
+    monkeypatch.setattr(server, "READ_ONLY_KEYS", {"tester"})
+    assert c.get("/v1/events", headers=H).status_code == 200            # can look
+    r = c.post("/v1/events", headers=H, json={"name": "notes.add", "input": {}})
+    assert r.status_code == 403 and "read-only" in r.json()["detail"]  # can't create events
+    assert c.post("/v1/controls/stop", headers=H, json={}).status_code == 403
+    assert c.get("/proxy/echo/anything", headers=H).status_code == 403  # proxy calls are actions, even GETs
+
+
 def test_record_only_skips_review(c):
     d = c.post("/v1/events", headers=H, json={"name": "payments.refund", "output": "done"}).json()
     assert d["decision"] == "allow" and d["status"] == "completed"

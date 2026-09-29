@@ -93,6 +93,9 @@ def _parse_api_keys(raw: str) -> dict[str, str]:
 APPROVAL_TIMEOUT = int(os.getenv("APPROVAL_TIMEOUT", "300"))  # default seconds a call waits for a human
 APPROVAL_WEBHOOK_URL = os.getenv("APPROVAL_WEBHOOK_URL", "")   # e.g. a Slack incoming webhook
 PUBLIC_URL = os.getenv("PUBLIC_URL", "").rstrip("/")           # used for links in webhook messages
+# Key names that can look at everything they're allowed to see but never change anything, e.g. an auditor
+# or a public demo key: READ_ONLY_KEYS="auditor,visitor"
+READ_ONLY_KEYS = {k.strip() for k in os.getenv("READ_ONLY_KEYS", "").split(",") if k.strip()}
 
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("gateway")
@@ -1156,10 +1159,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Squidbrake", version="1.0.0", lifespan=lifespan)
 
 
-def auth(x_gateway_key: str | None = Header(None)) -> str:
+def auth(request: Request, x_gateway_key: str | None = Header(None)) -> str:
     name = keystore.identify(x_gateway_key or "")
     if name is None:
         raise HTTPException(401, "missing or invalid X-Gateway-Key")
+    if name in READ_ONLY_KEYS and (request.method not in ("GET", "HEAD") or request.url.path.startswith("/proxy/")):
+        raise HTTPException(403, f"'{name}' is a read-only key: it can look, but not change anything")
     return name
 
 
@@ -1664,7 +1669,8 @@ def mobile_page():
 
 @app.get("/", include_in_schema=False)
 def root():
-    return RedirectResponse("/dashboard")
+    # ROOT_REDIRECT lets a demo send visitors straight in, e.g. /dashboard#key=demo (see demo/live_demo.py)
+    return RedirectResponse(os.getenv("ROOT_REDIRECT", "/dashboard"))
 
 
 @app.get("/dashboard", include_in_schema=False)
