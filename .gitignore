@@ -1,0 +1,15 @@
+# your keys, settings, history and local environment (never commit these)
+MY_*
+.env
+.env.*
+!.env.example
+data/
+.venv/
+dist/
+__pycache__/
+.pytest_cache/
+*.bak
+*.bak-*
+
+# the marketing site is a separate project
+squidbreak-site/

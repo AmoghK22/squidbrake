@@ -1,0 +1,1579 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Squidbrake</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f4f3f0;
+  --surface-1: #fcfcfb;
+  --surface-2: #f0efec;
+  --border: #e2e1dc;
+  --grid: #e8e7e3;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #7a7974;
+  --accent: #2a78d6;
+  --series-1: #2a78d6;
+  --hover-col: rgba(42, 120, 214, 0.08);
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --neutral: #8a8984;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.04);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #121211;
+    --surface-1: #1a1a19;
+    --surface-2: #242422;
+    --border: #2f2f2c;
+    --grid: #2a2a28;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8f8e86;
+    --accent: #3987e5;
+    --series-1: #3987e5;
+    --hover-col: rgba(57, 135, 229, 0.12);
+    --neutral: #8f8e86;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #121211;
+  --surface-1: #1a1a19;
+  --surface-2: #242422;
+  --border: #2f2f2c;
+  --grid: #2a2a28;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8f8e86;
+  --accent: #3987e5;
+  --series-1: #3987e5;
+  --hover-col: rgba(57, 135, 229, 0.12);
+  --neutral: #8f8e86;
+  --shadow: none;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--page);
+  color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 20px 24px 48px; }
+@media (max-width: 640px) { .wrap { padding: 14px 16px 40px; } }
+
+/* header */
+header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+header h1 { font-size: 18px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+.conn { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12.5px; }
+.conn .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--neutral); }
+.conn.ok .dot { background: var(--good); }
+.conn.err .dot { background: var(--critical); }
+header .spacer { flex: 1; }
+.btn {
+  border: 1px solid var(--border); background: var(--surface-1); border-radius: 8px;
+  padding: 6px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn:focus-visible, input:focus-visible, select:focus-visible, .seg button:focus-visible, tr:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+.toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 13px; cursor: pointer; user-select: none; }
+
+/* filter row */
+.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-1); }
+.seg button { border: 0; background: none; padding: 6px 12px; cursor: pointer; color: var(--text-secondary); }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--text-primary); font-weight: 600; }
+.filters input, .filters select {
+  border: 1px solid var(--border); background: var(--surface-1); border-radius: 8px; padding: 6px 10px; min-width: 0;
+}
+.filters input[type=search] { flex: 1 1 220px; }
+.filters .f-sm { flex: 0 1 150px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 12.5px; color: var(--text-secondary);
+}
+.chip b { color: var(--text-primary); font-weight: 600; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip button { border: 0; background: none; cursor: pointer; color: var(--text-muted); padding: 0 4px; font-size: 14px; line-height: 1; }
+
+/* cards */
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.card h2 { font-size: 13px; font-weight: 600; margin: 0; color: var(--text-secondary); }
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 14px 16px 6px; }
+.card-head .sub { font-size: 12px; color: var(--text-muted); }
+.linkish { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 0; font-size: 12.5px; }
+
+.tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+@media (max-width: 860px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tile { padding: 12px 14px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.tile:hover { background: var(--surface-2); }
+.tile[aria-pressed="true"] { border-color: var(--accent); }
+.tile .lbl { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); }
+.tile .val { font-size: 26px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.tile .pct { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.row2 { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+@media (max-width: 960px) { .row2 { grid-template-columns: minmax(0, 1fr); } }
+
+/* status glyph */
+.st { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); white-space: nowrap; }
+.st i {
+  font-style: normal; width: 16px; height: 16px; border-radius: 50%; display: inline-grid; place-items: center;
+  font-size: 10px; font-weight: 700; color: #fff; background: var(--c, var(--neutral)); flex: none;
+}
+.st.completed { --c: var(--good); }
+.st.failed { --c: var(--serious); }
+.st.denied { --c: var(--critical); }
+.st.pending { --c: var(--neutral); }
+.st.awaiting_approval { --c: var(--warning); }
+.st.awaiting_approval i { color: #3d2c00; }
+
+/* approval queue */
+.approvals { margin-bottom: 12px; border-color: var(--warning); border-width: 1px 1px 1px 4px; }
+.approvals .card-head h2 { color: var(--text-primary); display: flex; align-items: center; gap: 8px; }
+.approvals .count { background: var(--warning); color: #3d2c00; border-radius: 999px; padding: 0 8px; font-size: 12px; font-weight: 700; }
+.aq { list-style: none; margin: 0; padding: 0 8px 8px; max-height: 420px; overflow: auto; }
+.aq li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; padding: 10px 8px; border-top: 1px solid var(--grid); }
+.aq li:first-child { border-top: 0; }
+.aq .who { font-size: 12.5px; color: var(--text-secondary); }
+.aq .why { font-size: 13px; }
+.aq .inp { grid-column: 1 / -1; font: 12px/1.4 var(--mono); color: var(--text-secondary); background: var(--surface-2);
+  border-radius: 6px; padding: 6px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aq .side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.aq .acts, .appr-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.aq .acts input, .appr-acts input { border: 1px solid var(--border); background: var(--surface-1); border-radius: 8px; padding: 5px 8px; width: 180px; min-width: 0; }
+.btn.approve { background: var(--good); border-color: var(--good); color: #fff; font-weight: 600; }
+.btn.reject { color: var(--critical); border-color: var(--critical); font-weight: 600; }
+.btn:disabled { opacity: .5; cursor: default; }
+.clock { font-size: 12.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.clock.soon { color: var(--critical); font-weight: 600; }
+.hint { font-size: 12px; color: var(--text-muted); }
+@media (max-width: 640px) {
+  .aq li { grid-template-columns: minmax(0, 1fr); }
+  .aq .side { align-items: stretch; }
+  .aq .acts { justify-content: stretch; }
+  .aq .acts input { flex: 1 1 100%; width: auto; }
+  .aq .acts .btn { flex: 1; justify-content: center; }
+}
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text-primary); color: var(--page);
+  padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 40; max-width: calc(100vw - 32px); box-shadow: 0 6px 24px rgba(0,0,0,.2);
+}
+
+/* chart */
+.chart-box { position: relative; padding: 4px 12px 10px; }
+#chart svg { display: block; width: 100%; height: 200px; overflow: visible; }
+#chart .axis { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+#chart .gridline { stroke: var(--grid); stroke-width: 1; }
+#chart .baseline { stroke: var(--border); stroke-width: 1; }
+#chart .bar { fill: var(--series-1); }
+#chart .hovercol { fill: transparent; }
+#chart .hovercol.on { fill: var(--hover-col); }
+.empty { color: var(--text-muted); text-align: center; padding: 40px 12px; font-size: 13px; }
+.tip {
+  position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 12.5px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  white-space: nowrap; z-index: 5; display: none;
+}
+.tip .t { color: var(--text-secondary); margin-bottom: 4px; }
+.tip .n { font-weight: 650; font-variant-numeric: tabular-nums; }
+.tip .r { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.tip .r .sw { width: 10px; height: 10px; border-radius: 3px; background: var(--series-1); }
+.mini-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.mini-table th, .mini-table td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--grid); }
+.mini-table th:first-child, .mini-table td:first-child { text-align: left; }
+.mini-wrap { max-height: 220px; overflow: auto; margin: 0 12px 12px; }
+
+/* top tools */
+.toplist { list-style: none; margin: 0; padding: 4px 8px 12px; max-height: 250px; overflow: auto; }
+.toplist li button {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; width: 100%; text-align: left;
+  border: 0; background: none; padding: 6px 8px; border-radius: 6px; cursor: pointer;
+}
+.toplist li button:hover { background: var(--surface-2); }
+.toplist .nm { font-family: var(--mono); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toplist .ct { font-size: 12.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.toplist .track { grid-column: 1 / -1; height: 4px; }
+.toplist .fill { height: 4px; border-radius: 0 4px 4px 0; background: var(--series-1); min-width: 2px; }
+
+/* events table */
+.tbl-wrap { overflow-x: auto; }
+table.events { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.events th {
+  text-align: left; font-weight: 600; font-size: 12px; color: var(--text-muted); padding: 8px 12px;
+  border-bottom: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0; background: var(--surface-1);
+}
+table.events td { padding: 8px 12px; border-bottom: 1px solid var(--grid); vertical-align: middle; white-space: nowrap; }
+table.events tbody tr { cursor: pointer; }
+table.events tbody tr:hover { background: var(--surface-2); }
+table.events tbody tr.sel { background: var(--hover-col); }
+table.events tr.fresh td { animation: flash 1.6s ease-out; }
+@keyframes flash { from { background: var(--hover-col); } to { background: transparent; } }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.muted { color: var(--text-muted); }
+.sec { color: var(--text-secondary); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.trunc { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.pill-link { border: 0; background: none; padding: 0; cursor: pointer; color: var(--text-secondary); text-decoration: underline dotted; text-underline-offset: 3px; }
+.pill-link:hover { color: var(--accent); }
+.foot { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; color: var(--text-muted); font-size: 12.5px; gap: 8px; flex-wrap: wrap; }
+
+/* drawer */
+.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.28); z-index: 20; display: none; }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 100vw); background: var(--surface-1);
+  border-left: 1px solid var(--border); z-index: 21; transform: translateX(100%); transition: transform .18s ease;
+  display: flex; flex-direction: column;
+}
+.drawer.open { transform: none; }
+.drawer.open + .backdrop, .backdrop.on { display: block; }
+.dr-head { display: flex; align-items: flex-start; gap: 10px; padding: 16px 18px 12px; border-bottom: 1px solid var(--border); }
+.dr-head h3 { margin: 0; font-family: var(--mono); font-size: 15px; word-break: break-all; }
+.dr-head .x { margin-left: auto; }
+.dr-body { overflow: auto; padding: 14px 18px 24px; }
+.kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 6px 12px; font-size: 13px; margin-bottom: 16px; }
+.kv dt { color: var(--text-muted); }
+.kv dd { margin: 0; word-break: break-word; }
+.blk h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin: 16px 0 6px; display: flex; justify-content: space-between; }
+.blk pre {
+  margin: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  font: 12.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto;
+}
+.banner { border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 14px; border: 1px solid var(--border); background: var(--surface-2); }
+.banner.denied { border-left: 3px solid var(--critical); }
+.banner.failed { border-left: 3px solid var(--serious); }
+.banner.awaiting { border-left: 3px solid var(--warning); }
+.banner.approved { border-left: 3px solid var(--good); }
+.banner .appr-acts { margin-top: 10px; justify-content: flex-start; }
+
+/* key dialog */
+dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--surface-1); color: var(--text-primary); padding: 20px; width: min(420px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(0,0,0,.35); }
+dialog h3 { margin: 0 0 6px; font-size: 16px; }
+dialog p { margin: 0 0 14px; color: var(--text-secondary); font-size: 13px; }
+dialog input { width: 100%; border: 1px solid var(--border); background: var(--page); border-radius: 8px; padding: 8px 10px; }
+dialog .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.err-msg { color: var(--critical); font-size: 12.5px; margin-top: 8px; min-height: 1em; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* story + history warnings */
+.signals { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; margin: 2px 0 10px; }
+.signal { border-radius: 8px; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border); border-left-width: 4px; background: var(--surface-2); }
+.signal.block { border-left-color: var(--critical); }
+.signal.review { border-left-color: var(--serious); }
+.signal.warn { border-left-color: var(--warning); }
+.story-d { grid-column: 1 / -1; font-size: 13px; }
+.story-d summary { cursor: pointer; color: var(--accent); font-size: 12.5px; }
+.story { list-style: none; margin: 8px 0 0; padding: 0 0 0 14px; border-left: 2px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+.story li { position: relative; }
+.story li::before { content: ""; position: absolute; left: -20px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--border); }
+.story .st-line { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+.story .st-in { color: var(--text-secondary); font: 12px/1.4 var(--mono); margin-top: 2px; word-break: break-word; }
+.story .st-out { color: var(--text-primary); font-size: 12.5px; margin-top: 2px; background: var(--surface-2); border-radius: 6px; padding: 5px 8px; word-break: break-word; }
+
+/* tabs + header actions */
+.tabs { display: flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 2px; }
+.tabs a { color: var(--text-secondary); text-decoration: none; padding: 5px 12px; border-radius: 7px; font-size: 13.5px; }
+.tabs a:hover { color: var(--text-primary); }
+.tabs a[aria-current="page"] { background: var(--surface-1); color: var(--text-primary); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.btn.danger { background: var(--critical); border-color: var(--critical); color: #fff; font-weight: 600; }
+.btn.danger:hover { background: var(--critical); filter: brightness(1.08); }
+.stop-banner { background: var(--critical); color: #fff; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.stop-banner b { font-size: 15px; }
+.stop-banner .btn { background: #fff; color: var(--critical); border-color: #fff; margin-left: auto; font-weight: 600; }
+.lede { color: var(--text-secondary); margin: 0 16px 12px; font-size: 13.5px; max-width: 900px; }
+code { font-family: var(--mono); font-size: .92em; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+
+/* forms */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 16px; padding: 0 16px 16px; align-items: end; }
+.form-grid.wide { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.form-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); }
+.form-grid label.full, .form-grid .full { grid-column: 1 / -1; }
+.form-grid label.check { flex-direction: row; align-items: center; font-weight: 400; color: var(--text-primary); font-size: 13.5px; }
+.form-grid input:not([type=checkbox]), .form-grid select { border: 1px solid var(--border); background: var(--surface-1); border-radius: 8px;
+  padding: 7px 10px; font-weight: 400; color: var(--text-primary); min-width: 0; width: 100%; }
+.form-grid .hint { font-weight: 400; }
+.inline { display: flex; gap: 8px; }
+.inline input { flex: 1; }
+.form-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.newkey { margin: 0 16px 16px; padding: 12px 14px; border: 1px solid var(--good); border-radius: 10px; background: var(--surface-2); font-size: 13.5px; }
+.newkey code { user-select: all; font-size: 13px; word-break: break-all; }
+.access { display: inline-flex; gap: 6px; align-items: center; }
+.tag { display: inline-block; font-size: 11.5px; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-secondary); margin-right: 4px; }
+.tag.admin { border-color: var(--accent); color: var(--accent); }
+
+/* reports */
+.report-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.report-bar .spacer { flex: 1; }
+.row2.even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+@media (max-width: 960px) { .row2.even { grid-template-columns: minmax(0, 1fr); } }
+.audit-ok { display: flex; gap: 12px; align-items: flex-start; padding: 4px 16px 16px; }
+.audit-ok .big { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 20px; flex: none; }
+.audit-ok.ok .big { background: var(--good); }
+.audit-ok.bad .big { background: var(--critical); }
+.audit-ok b { display: block; font-size: 15px; }
+.fp { font-family: var(--mono); font-size: 12px; color: var(--text-muted); word-break: break-all; }
+.print-head { display: none; }
+td.wrap { white-space: normal; max-width: 420px; }
+
+/* dialogs */
+dialog.wide-dlg { width: min(460px, calc(100vw - 32px)); }
+.qr { display: grid; place-items: center; background: #fff; border-radius: 12px; padding: 12px; margin: 8px 0 10px; }
+.qr img { width: 240px; height: 240px; image-rendering: pixelated; }
+.warn { color: var(--critical); font-size: 13px; }
+dialog input#stopReason { width: 100%; border: 1px solid var(--border); background: var(--page); border-radius: 8px; padding: 8px 10px; }
+
+@media print {
+  header, .filters, .report-bar, .stop-banner, .drawer, .backdrop, #toast, .view:not(#view-reports) { display: none !important; }
+  body { background: #fff; color: #000; }
+  .card { box-shadow: none; break-inside: avoid; }
+  .print-head { display: block; margin-bottom: 12px; }
+  .print-head h1 { font-size: 20px; margin: 0 0 4px; }
+  td button, th:last-child:empty { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Squidbrake</h1>
+    <span class="conn" id="conn"><span class="dot"></span><span id="connText">Connecting…</span></span>
+    <nav class="tabs" id="tabs" aria-label="Sections">
+      <a href="#activity" data-view="activity">Activity</a>
+      <a href="#team" data-view="team">Team</a>
+      <a href="#reports" data-view="reports">Reports</a>
+      <a href="#settings" data-view="settings" data-admin hidden>Settings</a>
+    </nav>
+    <span class="spacer"></span>
+    <label class="toggle"><input type="checkbox" id="auto" checked> Live</label>
+    <button class="btn" id="refresh" title="Refresh">↻</button>
+    <button class="btn" id="phoneBtn" title="Approve from your phone">📱 Phone</button>
+    <button class="btn" id="keyBtn" title="Sign in with a different key">⚿ <span id="meName">Key</span></button>
+    <button class="btn danger" id="stopBtn" title="Block every agent action right now" hidden>⏹ Stop agents</button>
+  </header>
+
+  <div class="stop-banner" id="stopBanner" role="alert" hidden></div>
+
+  <div id="view-activity" class="view">
+  <div class="filters" role="search">
+    <div class="seg" id="range" aria-label="Time range">
+      <button data-r="1h">1h</button><button data-r="24h">24h</button><button data-r="7d">7d</button><button data-r="30d">30d</button><button data-r="1y">1y</button>
+    </div>
+    <input type="search" id="q" placeholder="Search tool, source, session…" aria-label="Search">
+    <select id="status" class="f-sm" aria-label="Status">
+      <option value="">All statuses</option>
+      <option value="completed">Completed</option>
+      <option value="failed">Failed</option>
+      <option value="denied">Denied</option>
+      <option value="pending">Pending</option>
+      <option value="awaiting_approval">Awaiting approval</option>
+    </select>
+    <input id="kind" class="f-sm" placeholder="Kind" aria-label="Kind" list="kinds">
+    <datalist id="kinds"><option value="tool_call"><option value="action"><option value="http_request"></datalist>
+    <input id="source" class="f-sm" placeholder="Source" aria-label="Source">
+    <input id="session_id" class="f-sm" placeholder="Session" aria-label="Session">
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <section class="card approvals" id="approvals" aria-labelledby="aqTitle" hidden>
+    <div class="card-head">
+      <h2 id="aqTitle">Needs approval <span class="count" id="aqCount"></span></h2>
+      <span class="hint" id="aqHint"></span>
+    </div>
+    <ul class="aq" id="aq"></ul>
+  </section>
+
+  <section class="tiles" id="tiles" aria-label="Totals"></section>
+
+  <div class="row2">
+    <section class="card">
+      <div class="card-head">
+        <h2 id="chartTitle">Calls per hour</h2>
+        <button class="linkish" id="tableToggle" aria-expanded="false">View as table</button>
+      </div>
+      <div class="chart-box">
+        <div id="chart"></div>
+        <div class="tip" id="tip"></div>
+      </div>
+      <div class="mini-wrap" id="chartTable" hidden></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Top tools</h2><span class="sub">click to filter</span></div>
+      <ul class="toplist" id="top"></ul>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="card-head"><h2>Events</h2><span class="sub" id="evCount"></span></div>
+    <div class="tbl-wrap">
+      <table class="events">
+        <thead><tr>
+          <th>Time</th><th>Status</th><th>Name</th><th>Kind</th><th>Source</th><th>Session</th><th class="num">Duration</th><th>Rule</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="noRows" hidden>No events match these filters.</div>
+    <div class="foot">
+      <span id="footInfo"></span>
+      <button class="btn" id="more" hidden>Load older</button>
+    </div>
+  </section>
+  </div>
+
+  <!-- ============================================================ TEAM -->
+  <div id="view-team" class="view" hidden>
+    <section class="card">
+      <div class="card-head"><h2>People and agents</h2><span class="sub" id="teamSub"></span></div>
+      <p class="lede">Each person and each AI agent gets its own key. People can open this dashboard; approvers can approve
+        held actions; admins manage the team and settings. Agents can only ask permission and report what they did.
+        Roles such as <code>finance</code> let rules require a specific team to approve.</p>
+      <div class="tbl-wrap">
+        <table class="events team">
+          <thead><tr><th>Name</th><th>Type</th><th>Access</th><th>Roles</th><th>Added</th><th></th></tr></thead>
+          <tbody id="teamRows"></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="card" id="addMemberCard" data-admin hidden>
+      <div class="card-head"><h2>Add someone</h2></div>
+      <form class="form-grid" id="addMember">
+        <label>Name <input name="name" required maxlength="64" placeholder="e.g. priya or billing-agent" pattern="[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}"></label>
+        <label>Type
+          <select name="kind"><option value="person">Person</option><option value="agent">AI agent</option></select></label>
+        <label class="person-only">Access
+          <select name="access"><option value="approver">Can approve</option><option value="viewer">Can view only</option></select></label>
+        <label class="person-only">Roles <input name="roles" placeholder="e.g. finance, admin"></label>
+        <div class="form-actions"><button class="btn primary" type="submit">Add and create key</button></div>
+      </form>
+      <div class="newkey" id="newKey" hidden></div>
+    </section>
+  </div>
+
+  <!-- ============================================================ REPORTS -->
+  <div id="view-reports" class="view" hidden>
+    <div class="report-bar">
+      <div class="seg" id="repRange" aria-label="Report period">
+        <button data-d="1">Today</button><button data-d="7">7 days</button><button data-d="30">30 days</button><button data-d="90">90 days</button>
+      </div>
+      <span class="spacer"></span>
+      <button class="btn" id="csvBtn">⬇ Download audit CSV</button>
+      <button class="btn" id="printBtn">🖨 Print / save PDF</button>
+    </div>
+    <div class="print-head" id="printHead"></div>
+    <section class="tiles" id="repTiles" aria-label="Report totals"></section>
+    <div class="row2 even">
+      <section class="card" id="auditCard"></section>
+      <section class="card">
+        <div class="card-head"><h2>Approvals by person</h2></div>
+        <div class="tbl-wrap"><table class="events"><thead><tr><th>Approver</th><th class="num">Approved</th><th class="num">Rejected</th></tr></thead>
+          <tbody id="repApprovers"></tbody></table></div>
+      </section>
+    </div>
+    <section class="card">
+      <div class="card-head"><h2>Agents</h2><span class="sub">stop a single agent without touching the others</span></div>
+      <div class="tbl-wrap"><table class="events"><thead><tr>
+        <th>Agent</th><th class="num">Actions</th><th class="num">Blocked</th><th class="num">Held</th><th class="num">Approved</th>
+        <th class="num">Rejected</th><th class="num">Failed</th><th>Last seen</th><th></th></tr></thead>
+        <tbody id="repAgents"></tbody></table></div>
+    </section>
+    <div class="row2 even">
+      <section class="card">
+        <div class="card-head"><h2>Blocked by rules</h2></div>
+        <div class="tbl-wrap"><table class="events"><thead><tr><th>Rule</th><th>Why</th><th class="num">Times</th></tr></thead>
+          <tbody id="repBlocked"></tbody></table></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Most used tools</h2></div>
+        <div class="tbl-wrap"><table class="events"><thead><tr><th>Tool</th><th class="num">Calls</th></tr></thead>
+          <tbody id="repTools"></tbody></table></div>
+      </section>
+    </div>
+    <section class="card">
+      <div class="card-head"><h2>Audit trail</h2><span class="sub">every decision, change and export, newest first</span></div>
+      <div class="tbl-wrap"><table class="events"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead>
+        <tbody id="repAudit"></tbody></table></div>
+    </section>
+  </div>
+
+  <!-- ============================================================ SETTINGS -->
+  <div id="view-settings" class="view" hidden>
+    <section class="card">
+      <div class="card-head"><h2>Notifications</h2></div>
+      <p class="lede">When an agent needs approval, the gateway can ping you on your phone and in Slack. Each message has a
+        secure one-tap link to approve or reject that one action; the link stops working once it's decided.</p>
+      <form class="form-grid wide" id="settingsForm">
+        <label class="full">Public address of this gateway
+          <span class="hint">Links in notifications point here, so it must open from your phone (your cloud URL or tunnel link).</span>
+          <span class="inline"><input name="public_url" placeholder="https://gateway.yourcompany.com">
+            <button type="button" class="btn" id="useOrigin">Use this page's address</button></span></label>
+        <label class="full">Phone notifications (free ntfy app)
+          <span class="hint">Install “ntfy” from the App Store / Google Play, tap +, and subscribe to this private topic name.
+            Anyone who knows the topic can see the notifications, so keep it random.</span>
+          <span class="inline"><input name="ntfy_topic" placeholder="leave empty to turn off" pattern="[A-Za-z0-9_-]{0,64}">
+            <button type="button" class="btn" id="genTopic">Generate private topic</button></span></label>
+        <label class="full">Slack incoming webhook
+          <span class="hint">Slack → Apps → Incoming Webhooks → Add to a channel, then paste the URL. Leave empty to turn off.</span>
+          <input name="slack_webhook" placeholder="https://hooks.slack.com/services/…"></label>
+        <label>One-tap links approve as
+          <select name="notify_as" id="notifyAs"></select>
+          <span class="hint">Whoever can see the notification can use its link, so pick the person who owns that phone / channel.</span></label>
+        <label class="check"><input type="checkbox" name="weekly_digest"> Post a weekly summary to Slack (Mondays 9:00)</label>
+        <div class="form-actions full">
+          <button class="btn primary" type="submit">Save</button>
+          <button class="btn" type="button" id="testNotify">Send a test notification</button>
+          <span class="hint" id="settingsMsg"></span>
+        </div>
+      </form>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Rules</h2></div>
+      <p class="lede">What agents may do is decided by <code>rules.yaml</code> on the gateway: allow, block, or hold for a person
+        (optionally a specific role). Edits apply within seconds. Use <b>Test a rule</b> to check what would happen.</p>
+      <form class="form-grid" id="ruleTest">
+        <label>Tool name <input name="name" placeholder="e.g. stripe.create_refund" required></label>
+        <label>Agent (source) <input name="source" placeholder="optional"></label>
+        <label class="full">Input (JSON) <input name="input" placeholder='{"amount": 250}'></label>
+        <div class="form-actions full"><button class="btn" type="submit">Test a rule</button><span class="hint" id="ruleResult"></span></div>
+      </form>
+    </section>
+  </div>
+</div>
+
+<dialog id="phoneDlg" class="wide-dlg">
+  <form method="dialog">
+    <h3>Approve from your phone</h3>
+    <p>Scan with your phone's camera. It opens your approvals inbox, signed in as <b id="phoneAs"></b>.
+      Anyone who scans this can act as you, so don't share it.</p>
+    <p class="warn" id="phoneWarn" hidden>No public address is set, so this only works on the same Wi-Fi/PC. An admin can set it in Settings.</p>
+    <div class="qr"><img id="phoneQr" alt="QR code for your phone approvals page"></div>
+    <p class="hint">For instant pop-ups, also turn on phone notifications in Settings.</p>
+    <div class="acts"><button class="btn primary" value="close">Done</button></div>
+  </form>
+</dialog>
+
+<dialog id="stopDlg">
+  <form method="dialog" id="stopForm">
+    <h3>Stop agents?</h3>
+    <p id="stopWhat">Every action any agent tries will be blocked immediately, until an admin resumes them. Actions already
+      running aren't interrupted.</p>
+    <input id="stopReason" placeholder="Reason (shown to the agents and in the audit trail)" maxlength="500" aria-label="Reason">
+    <div class="acts">
+      <button class="btn" type="button" id="stopCancel">Cancel</button>
+      <button class="btn danger" type="submit">⏹ Stop now</button>
+    </div>
+  </form>
+</dialog>
+
+<aside class="drawer" id="drawer" aria-hidden="true" aria-labelledby="drTitle">
+  <div class="dr-head">
+    <div>
+      <h3 id="drTitle"></h3>
+      <div id="drSub" class="muted" style="font-size:12.5px;margin-top:4px"></div>
+    </div>
+    <button class="btn x" id="drClose" aria-label="Close">✕</button>
+  </div>
+  <div class="dr-body" id="drBody"></div>
+</aside>
+<div class="backdrop" id="backdrop"></div>
+
+<dialog id="keyDlg">
+  <form method="dialog" id="keyForm">
+    <h3>Gateway API key</h3>
+    <p>Paste your key (it starts with <code>gw_</code>). The admin key was printed when the server first started; anyone with access to the server can make a new one with <code>python server.py add-key NAME --approver</code>. It's kept in this browser only.</p>
+    <input type="password" id="keyInput" autocomplete="off" placeholder="secret" aria-label="API key">
+    <div class="err-msg" id="keyErr"></div>
+    <div class="acts">
+      <button class="btn" type="button" id="keyCancel">Cancel</button>
+      <button class="btn primary" type="submit">Connect</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (s) => document.querySelector(s);
+  const RANGES = {
+    "1h":  { hours: 1,    bucket: "hour", label: "Calls per hour" },
+    "24h": { hours: 24,   bucket: "hour", label: "Calls per hour" },
+    "7d":  { hours: 168,  bucket: "hour", label: "Calls per hour" },
+    "30d": { hours: 720,  bucket: "day",  label: "Calls per day" },
+    "1y":  { hours: 8760, bucket: "day",  label: "Calls per day" },
+  };
+  const FILTERS = ["q", "status", "kind", "source", "session_id", "name", "client"];
+  const STATUS = {
+    completed: { label: "Completed", icon: "✓" },
+    failed:    { label: "Failed",    icon: "!" },
+    denied:    { label: "Denied",    icon: "✕" },
+    pending:   { label: "Pending",   icon: "…" },
+    awaiting_approval: { label: "Awaiting approval", icon: "?" },
+  };
+
+  // ---------- state (mirrored into the URL so views are linkable)
+  const params = new URLSearchParams(location.search);
+  const state = { range: RANGES[params.get("range")] ? params.get("range") : "24h", f: {} };
+  FILTERS.forEach((k) => { if (params.get(k)) state.f[k] = params.get(k); });
+  let rows = [], nextBefore = null, selectedId = null, lastStats = null, gen = 0, liveBusy = false;
+  let me = null, queue = [], drawerEvent = null, view = "activity";
+  const linkedEvent = params.get("event");  // /dashboard?event=<id> (webhook links) opens that event
+
+  const store = {
+    get() { try { return localStorage.getItem("gw.key") || ""; } catch { return ""; } },
+    set(v) { try { v ? localStorage.setItem("gw.key", v) : localStorage.removeItem("gw.key"); } catch {} },
+  };
+  let apiKey = store.get();
+  // /dashboard#key=... signs this browser in (the fragment never reaches the server) and is then removed.
+  const fragKey = new URLSearchParams(location.hash.slice(1)).get("key");
+  if (fragKey) {
+    apiKey = fragKey.trim();
+    store.set(apiKey);
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+  try { $("#auto").checked = localStorage.getItem("gw.auto") !== "0"; } catch {}
+
+  function syncUrl() {
+    const p = new URLSearchParams();
+    if (state.range !== "24h") p.set("range", state.range);
+    FILTERS.forEach((k) => state.f[k] && p.set(k, state.f[k]));
+    const qs = p.toString();
+    history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
+  }
+
+  // ---------- api
+  class AuthError extends Error {}
+  async function api(path, query = {}) {
+    const url = new URL(path, location.origin);
+    Object.entries(query).forEach(([k, v]) => v != null && v !== "" && url.searchParams.set(k, v));
+    const res = await fetch(url, { headers: apiKey ? { "X-Gateway-Key": apiKey } : {} });
+    if (res.status === 401) throw new AuthError("unauthorized");
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json();
+  }
+  async function apiSend(method, path, body) {
+    const res = await fetch(new URL(path, location.origin), {
+      method,
+      headers: { "Content-Type": "application/json", ...(apiKey ? { "X-Gateway-Key": apiKey } : {}) },
+      body: method === "DELETE" ? undefined : JSON.stringify(body || {}),
+    });
+    let data = null;
+    try { data = await res.json(); } catch {}
+    if (!res.ok) {
+      const d = data && data.detail;
+      throw new Error(Array.isArray(d) ? d.map((x) => x.msg).join("; ") : d || `${res.status} ${res.statusText}`);
+    }
+    return data;
+  }
+  const apiPost = (path, body) => apiSend("POST", path, body);
+  let toastTimer;
+  function toast(msg) {
+    let t = $("#toast");
+    if (!t) { t = el("div", { id: "toast", class: "toast", role: "status" }); document.body.append(t); }
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3500);
+  }
+  function sinceIso() {
+    return new Date(Date.now() - RANGES[state.range].hours * 3600e3).toISOString();
+  }
+  function setConn(kind, text) {
+    $("#conn").className = "conn " + kind;
+    $("#connText").textContent = text;
+  }
+
+  // ---------- formatting
+  const nf = new Intl.NumberFormat();
+  const pad = (n) => String(n).padStart(2, "0");
+  function fmtTime(iso) {
+    const d = new Date(iso), now = new Date();
+    const t = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    if (d.toDateString() === now.toDateString()) return t;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + t;
+  }
+  function fmtAgo(iso) {
+    const s = Math.round((Date.now() - new Date(iso)) / 1000);
+    if (s < 60) return `${Math.max(s, 0)}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+  }
+  function fmtDur(ms) {
+    if (ms == null) return "";
+    if (ms < 1) return "<1 ms";
+    if (ms < 1000) return `${Math.round(ms)} ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)} s`;
+    return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+  }
+  function el(tag, attrs = {}, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v == null || v === false) continue;
+      if (k === "class") n.className = v;
+      else if (k === "text") n.textContent = v;
+      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v);
+    }
+    kids.flat().forEach((c) => c != null && n.append(c.nodeType ? c : document.createTextNode(String(c))));
+    return n;
+  }
+  function statusEl(s) {
+    const m = STATUS[s] || { label: s || "unknown", icon: "?" };
+    return el("span", { class: "st " + s }, el("i", { "aria-hidden": "true", text: m.icon }), m.label);
+  }
+
+  // ---------- filters UI
+  function renderFilters() {
+    document.querySelectorAll("#range button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.r === state.range)));
+    ["q", "status", "kind", "source", "session_id"].forEach((k) => {
+      const input = $("#" + k);
+      if (document.activeElement !== input) input.value = state.f[k] || "";
+    });
+    // exact-match filters without their own input show as removable chips
+    const chips = $("#chips");
+    chips.replaceChildren();
+    ["name", "client"].forEach((k) => {
+      if (!state.f[k]) return;
+      chips.append(el("span", { class: "chip" }, `${k}: `, el("b", { text: state.f[k] }),
+        el("button", { "aria-label": `Remove ${k} filter`, text: "×", onclick: () => setFilter(k, "") })));
+    });
+    $("#chartTitle").textContent = RANGES[state.range].label;
+  }
+  function setFilter(k, v) {
+    if (v) state.f[k] = v; else delete state.f[k];
+    syncUrl(); renderFilters(); reload();
+  }
+
+  // ---------- tiles
+  function renderTiles(stats) {
+    const by = stats.by_status || {};
+    const total = Object.values(by).reduce((a, b) => a + b, 0);
+    const tiles = $("#tiles");
+    tiles.replaceChildren();
+    const mk = (key, label, value, lblNode) => el("button", {
+      class: "card tile", "aria-pressed": String((state.f.status || "") === key),
+      onclick: () => setFilter("status", state.f.status === key ? "" : key),
+      title: key ? `Show only ${label.toLowerCase()}` : "Show all statuses",
+    },
+      el("div", { class: "lbl" }, lblNode || label),
+      el("div", { class: "val", text: nf.format(value) }),
+      el("div", { class: "pct", text: key && total ? `${((value / total) * 100).toFixed(value / total < 0.01 && value ? 2 : 1)}%` : `last ${state.range}` }),
+    );
+    tiles.append(mk("", "Total calls", total));
+    for (const s of ["awaiting_approval", "completed", "failed", "denied", "pending"]) tiles.append(mk(s, STATUS[s].label, by[s] || 0, statusEl(s)));
+  }
+
+  // ---------- timeline chart
+  function buildBuckets(range) {
+    const { hours, bucket } = RANGES[range];
+    const out = [];
+    if (bucket === "hour") {
+      const end = new Date(); end.setUTCMinutes(0, 0, 0);
+      for (let i = hours - 1; i >= 0; i--) {
+        const d = new Date(end.getTime() - i * 3600e3);
+        out.push({ key: d.toISOString().slice(0, 13), start: d, ms: 3600e3 });
+      }
+    } else {
+      const end = new Date(); end.setUTCHours(0, 0, 0, 0);
+      for (let i = Math.ceil(hours / 24) - 1; i >= 0; i--) {
+        const d = new Date(end.getTime() - i * 86400e3);
+        out.push({ key: d.toISOString().slice(0, 10), start: d, ms: 86400e3 });
+      }
+    }
+    return out;
+  }
+  function niceTicks(max) {
+    if (max <= 0) return [0, 1];
+    const raw = max / 4, mag = 10 ** Math.floor(Math.log10(raw)), f = raw / mag;
+    const step = Math.max(1, (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * mag);
+    const top = Math.ceil(max / step) * step, ticks = [];
+    for (let v = 0; v <= top + 1e-9; v += step) ticks.push(v);
+    return ticks;
+  }
+  function bucketLabel(b, bucket, long) {
+    const d = b.start;
+    if (bucket === "day") return d.toLocaleDateString(undefined, long ? { weekday: "short", month: "short", day: "numeric" } : { month: "short", day: "numeric" });
+    const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    if (!long) return hm;
+    const e = new Date(d.getTime() + b.ms);
+    return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${hm}–${pad(e.getHours())}:${pad(e.getMinutes())}`;
+  }
+
+  function renderChart(stats) {
+    const { bucket } = RANGES[state.range];
+    const buckets = buildBuckets(state.range);
+    const byKey = Object.fromEntries((stats.timeline || []).map((t) => [t.bucket, t]));
+    buckets.forEach((b) => Object.assign(b, byKey[b.key] || { count: 0, denied: 0, failed: 0 }));
+    const box = $("#chart");
+    const total = buckets.reduce((a, b) => a + b.count, 0);
+    renderChartTable(buckets, bucket);
+    if (!total) { box.replaceChildren(el("div", { class: "empty", text: "No calls in this period." })); return; }
+
+    const W = Math.max(box.clientWidth, 280), H = 200;
+    const m = { t: 10, r: 4, b: 24, l: 40 };
+    const pw = W - m.l - m.r, ph = H - m.t - m.b;
+    const ticks = niceTicks(Math.max(...buckets.map((b) => b.count)));
+    const top = ticks[ticks.length - 1];
+    const y = (v) => m.t + ph - (v / top) * ph;
+    const colW = pw / buckets.length;
+    const gap = colW > 6 ? 2 : colW > 3 ? 1 : 0;
+    const bw = Math.max(colW - gap, 1);
+
+    const NS = "http://www.w3.org/2000/svg";
+    const s = (tag, a) => { const n = document.createElementNS(NS, tag); for (const k in a) n.setAttribute(k, a[k]); return n; };
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+      "aria-label": `${RANGES[state.range].label}: ${nf.format(total)} calls in the last ${state.range}. Use "View as table" for exact values.` });
+    for (const t of ticks) {
+      svg.append(s("line", { class: t === 0 ? "baseline" : "gridline", x1: m.l, x2: W - m.r, y1: y(t), y2: y(t) }));
+      const lbl = s("text", { class: "axis", x: m.l - 8, y: y(t) + 4, "text-anchor": "end" });
+      lbl.textContent = nf.format(t);
+      svg.append(lbl);
+    }
+    const every = Math.max(1, Math.ceil(buckets.length / Math.max(2, Math.floor(pw / 70))));
+    const hovers = [];
+    buckets.forEach((b, i) => {
+      const x = m.l + i * colW + gap / 2;
+      const hc = s("rect", { class: "hovercol", x: m.l + i * colW, y: m.t, width: colW, height: ph });
+      hovers.push(hc);
+      svg.append(hc);
+      if (b.count > 0) {
+        const h = Math.max(ph - (y(b.count) - m.t), 1.5), yt = m.t + ph - h;
+        const r = Math.min(4, bw / 2, h);
+        svg.append(s("path", { class: "bar",
+          d: `M${x},${yt + h}V${yt + r}A${r},${r} 0 0 1 ${x + r},${yt}H${x + bw - r}A${r},${r} 0 0 1 ${x + bw},${yt + r}V${yt + h}Z` }));
+      }
+      if (i % every === 0 && (i + every <= buckets.length || buckets.length <= 2)) {
+        const lbl = s("text", { class: "axis", x: m.l + i * colW + colW / 2, y: H - 6, "text-anchor": "middle" });
+        lbl.textContent = bucketLabel(b, bucket, false);
+        svg.append(lbl);
+      }
+    });
+    // one hit layer for the whole plot: bigger than any bar, works for 1px bars too
+    const hit = s("rect", { x: m.l, y: m.t, width: pw, height: ph, fill: "transparent" });
+    const tip = $("#tip");
+    let cur = -1;
+    const hide = () => { tip.style.display = "none"; if (cur >= 0) hovers[cur].classList.remove("on"); cur = -1; };
+    hit.addEventListener("mousemove", (ev) => {
+      const rect = svg.getBoundingClientRect(), sx = W / rect.width;
+      const i = Math.min(buckets.length - 1, Math.max(0, Math.floor(((ev.clientX - rect.left) * sx - m.l) / colW)));
+      if (i !== cur) {
+        if (cur >= 0) hovers[cur].classList.remove("on");
+        hovers[i].classList.add("on"); cur = i;
+        const b = buckets[i];
+        tip.replaceChildren(
+          el("div", { class: "t", text: bucketLabel(b, bucket, true) }),
+          el("div", { class: "r" }, el("span", { class: "sw" }), el("span", { class: "n", text: nf.format(b.count) }), "calls"),
+          b.denied ? el("div", { class: "r" }, statusEl("denied"), el("span", { class: "n", text: nf.format(b.denied) })) : null,
+          b.failed ? el("div", { class: "r" }, statusEl("failed"), el("span", { class: "n", text: nf.format(b.failed) })) : null,
+        );
+        tip.style.display = "block";
+      }
+      const boxRect = box.parentElement.getBoundingClientRect();
+      let left = ev.clientX - boxRect.left + 14;
+      if (left + tip.offsetWidth > boxRect.width - 4) left = ev.clientX - boxRect.left - tip.offsetWidth - 14;
+      tip.style.left = Math.max(4, left) + "px";
+      tip.style.top = Math.max(0, ev.clientY - boxRect.top - tip.offsetHeight - 10) + "px";
+    });
+    hit.addEventListener("mouseleave", hide);
+    hit.addEventListener("click", () => {
+      if (cur < 0) return;
+      const b = buckets[cur];
+      // Zoom the event list to that bucket.
+      state.window = { since: b.start.toISOString(), before: new Date(b.start.getTime() + b.ms).toISOString(), label: bucketLabel(b, bucket, true) };
+      reloadEvents();
+    });
+    svg.style.cursor = "pointer";
+    svg.append(hit);
+    box.replaceChildren(svg);
+  }
+  function renderChartTable(buckets, bucket) {
+    const wrap = $("#chartTable");
+    const tbl = el("table", { class: "mini-table" },
+      el("thead", {}, el("tr", {}, el("th", { text: bucket === "day" ? "Day" : "Hour" }), el("th", { text: "Calls" }), el("th", { text: "Denied" }), el("th", { text: "Failed" }))),
+      el("tbody", {}, buckets.slice().reverse().filter((b) => b.count).map((b) =>
+        el("tr", {}, el("td", { text: bucketLabel(b, bucket, true) }), el("td", { text: nf.format(b.count) }), el("td", { text: nf.format(b.denied) }), el("td", { text: nf.format(b.failed) })))),
+    );
+    wrap.replaceChildren(tbl);
+  }
+
+  // ---------- top tools
+  function renderTop(stats) {
+    const list = $("#top"), top = stats.top_names || [];
+    list.replaceChildren();
+    if (!top.length) { list.append(el("li", { class: "empty", text: "Nothing yet." })); return; }
+    const max = top[0].count;
+    top.forEach((t) => list.append(el("li", {},
+      el("button", { title: `Filter by ${t.name}`, onclick: () => setFilter("name", state.f.name === t.name ? "" : t.name) },
+        el("span", { class: "nm", text: t.name }),
+        el("span", { class: "ct", text: nf.format(t.count) }),
+        el("span", { class: "track" }, el("span", { class: "fill", style: `display:block;width:${(t.count / max) * 100}%` })),
+      ))));
+  }
+
+  // ---------- events table
+  function rowEl(e, fresh) {
+    const link = (k, v) => v ? el("button", { class: "pill-link trunc", title: `Filter by ${k}: ${v}`, text: v,
+      onclick: (ev) => { ev.stopPropagation(); setFilter(k, v); } }) : el("span", { class: "muted", text: "—" });
+    const tr = el("tr", { tabindex: "0", "data-id": e.id, class: [fresh ? "fresh" : "", e.id === selectedId ? "sel" : ""].join(" ").trim() || null,
+      onclick: () => openDrawer(e.id), onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openDrawer(e.id); } } },
+      el("td", { title: new Date(e.created_at).toLocaleString() }, el("span", { text: fmtTime(e.created_at) }), " ", el("span", { class: "muted", text: fmtAgo(e.created_at) })),
+      el("td", {}, statusEl(e.status)),
+      el("td", { class: "mono trunc", title: e.name, text: e.name }),
+      el("td", { class: "sec", text: e.kind }),
+      el("td", {}, link("source", e.source)),
+      el("td", { class: "mono" }, link("session_id", e.session_id)),
+      el("td", { class: "num sec", text: fmtDur(e.duration_ms) }),
+      el("td", { class: "mono sec trunc", title: e.reason || "", text: e.rule_id || "" }),
+    );
+    return tr;
+  }
+  function renderRows(freshIds = new Set()) {
+    const tbody = $("#rows");
+    tbody.replaceChildren(...rows.map((e) => rowEl(e, freshIds.has(e.id))));
+    $("#noRows").hidden = rows.length > 0;
+    $("#more").hidden = !nextBefore;
+    $("#evCount").textContent = rows.length ? `${nf.format(rows.length)} shown${nextBefore ? "" : " · all loaded"}` : "";
+    const info = $("#footInfo");
+    info.replaceChildren();
+    if (state.window) {
+      info.append(`Showing ${state.window.label} `,
+        el("button", { class: "linkish", text: "× back to full range", onclick: () => { state.window = null; reloadEvents(); } }));
+    } else info.append(`Newest first · range ${state.range}`);
+  }
+  function eventQuery(before) {
+    const w = state.window;
+    return { ...state.f, since: w ? w.since : sinceIso(), before: before || (w ? w.before : null), limit: 100 };
+  }
+  // Every load carries the generation it started in; a response from an older generation
+  // (filters changed while it was in flight) is dropped instead of overwriting the new view.
+  async function loadEvents(append, g) {
+    const data = await api("/v1/events", eventQuery(append ? nextBefore : null));
+    if (g !== gen) return;
+    rows = append ? rows.concat(data.events) : data.events;
+    nextBefore = data.next_before;
+    renderRows();
+  }
+  // Live refresh: merge the newest page into what's loaded instead of resetting scroll/paging.
+  async function refreshEvents(g) {
+    if (state.window) return;
+    const data = await api("/v1/events", eventQuery(null));
+    if (g !== gen) return;
+    const byId = new Map(rows.map((r, i) => [r.id, i]));
+    const fresh = [];
+    for (const e of data.events) {
+      if (byId.has(e.id)) rows[byId.get(e.id)] = e;
+      else fresh.push(e);
+    }
+    const cutoff = sinceIso();
+    rows = fresh.concat(rows).filter((r) => r.created_at >= cutoff.slice(0, 23));
+    if (!rows.length) nextBefore = data.next_before;
+    renderRows(new Set(rows.length === fresh.length ? [] : fresh.map((e) => e.id)));
+  }
+
+  async function loadStats(g) {
+    const { hours, bucket } = RANGES[state.range];
+    // Tiles always show every status (they are the status filter); chart + top tools follow all filters.
+    const { status, ...rest } = state.f;
+    const [all, filtered] = await Promise.all([
+      api("/v1/stats", { ...rest, hours, bucket }),
+      status ? api("/v1/stats", { ...state.f, hours, bucket }) : null,
+    ]);
+    if (g !== gen) return;
+    lastStats = filtered || all;
+    renderTiles(all); renderChart(lastStats); renderTop(lastStats);
+  }
+
+  async function run(g, fn) {
+    try {
+      await fn();
+      if (g === gen) setConn("ok", "Connected");
+    } catch (e) {
+      if (g !== gen) return;
+      if (e instanceof AuthError) { setConn("err", "API key required"); openKeyDialog(!!apiKey); }
+      else setConn("err", "Can't reach gateway");
+    }
+  }
+  // User actions start a new generation and always run.
+  const reload = () => {
+    state.window = null; const g = ++gen;
+    return run(g, () => Promise.all([loadMe().then(() => Promise.all([loadQueue(), loadControls(), loadView()])),
+                                     loadStats(g), loadEvents(false, g)]));
+  };
+  const reloadEvents = () => { const g = ++gen; return run(g, () => loadEvents(false, g)); };
+  // Live ticks never overlap each other and yield to user actions.
+  const live = async () => {
+    if (liveBusy) return;
+    liveBusy = true;
+    const g = gen;
+    try {
+      await run(g, () => Promise.all([loadQueue(), loadControls(), loadStats(g), refreshEvents(g),
+                                      view === "reports" ? loadReports() : null]));
+    } finally { liveBusy = false; }
+  };
+
+  // ---------- approvals
+  async function loadMe() {
+    me = await api("/v1/me");
+    $("#meName").textContent = me.client;
+    document.querySelectorAll("[data-admin]").forEach((n) => (n.hidden = !me.is_admin));
+    $("#stopBtn").hidden = !(me.can_approve || me.is_admin);
+    if (!me.is_admin && view === "settings") showView("activity");
+  }
+  // Why this viewer can't decide on e, or null if they can.
+  function cannotDecide(e) {
+    if (!me) return "Checking permissions…";
+    if (!me.can_approve) return `Key "${me.client}" can't approve. Use an approver key.`;
+    if (me.auth_enabled && e.client === me.client) return "This request came from your own key; someone else must decide.";
+    if (me.auth_enabled && e.approvers && e.approvers.length && !e.approvers.includes(me.client))
+      return `Only ${e.approvers.join(", ")} can decide this one.`;
+    return null;
+  }
+  function clockEl(e) {
+    return el("span", { class: "clock", "data-deadline": e.approval_deadline, "data-then": e.approval_on_timeout || "deny" });
+  }
+  function tickClocks() {
+    const now = Date.now();
+    document.querySelectorAll(".clock[data-deadline]").forEach((c) => {
+      const s = Math.round((new Date(c.dataset.deadline) - now) / 1000);
+      const then = c.dataset.then === "allow" ? "auto-allows" : "auto-denies";
+      c.textContent = s > 0 ? `${then} in ${Math.floor(s / 60)}:${pad(s % 60)}` : `timed out, ${then.replace("auto-", "")}…`;
+      c.classList.toggle("soon", s <= 60);
+    });
+  }
+  function decisionControls(e, compact) {
+    const why = cannotDecide(e);
+    if (why) return el("span", { class: "hint", text: why });
+    const note = el("input", { placeholder: "Note (optional)", "aria-label": `Note for ${e.name}`, maxlength: "2000" });
+    const go = (outcome) => async (ev) => {
+      const btns = ev.target.parentElement.querySelectorAll("button");
+      btns.forEach((b) => (b.disabled = true));
+      try {
+        await apiPost(`/v1/events/${encodeURIComponent(e.id)}/${outcome}`, { note: note.value.trim() || null });
+        toast(`${outcome === "approve" ? "Approved" : "Rejected"} ${e.name}`);
+        queue = queue.filter((q) => q.id !== e.id);
+        renderQueue();
+        if (drawerEvent && drawerEvent.id === e.id) refreshDrawer();
+        live();
+      } catch (err) {
+        toast(String(err.message || err));
+        btns.forEach((b) => (b.disabled = false));
+        loadQueue().catch(() => {});
+      }
+    };
+    return el("div", { class: compact ? "acts" : "appr-acts" }, note,
+      el("button", { class: "btn reject", onclick: go("reject") }, "✕ Reject"),
+      el("button", { class: "btn approve", onclick: go("approve") }, "✓ Approve"));
+  }
+  function preview(v) {
+    if (v == null) return "(no input)";
+    const s = typeof v === "string" ? v : JSON.stringify(v);
+    return s.length > 240 ? s.slice(0, 240) + "…" : s;
+  }
+  async function loadQueue() {
+    const data = await api("/v1/events", { status: "awaiting_approval", limit: 200 });
+    queue = data.events.sort((a, b) => (a.approval_deadline || "").localeCompare(b.approval_deadline || ""));
+    renderQueue();
+    // Someone else (or the timeout) decided the event that's open in the drawer.
+    if (drawerEvent && drawerEvent.status === "awaiting_approval" && !queue.some((q) => q.id === drawerEvent.id)) refreshDrawer();
+  }
+  // Reconcile by id so a live refresh never wipes a note someone is typing.
+  function renderQueue() {
+    const box = $("#approvals"), list = $("#aq");
+    box.hidden = queue.length === 0;
+    $("#aqCount").textContent = queue.length;
+    $("#aqHint").textContent = me && !me.can_approve ? `Viewing as "${me.client}" (not an approver)` : "oldest deadline first";
+    document.title = queue.length ? `(${queue.length}) Needs approval · Squidbrake` : "Squidbrake";
+    // Rows are reused across refreshes, but rebuilt when the viewer (API key) changes,
+    // because the approve/reject controls depend on who is looking.
+    const viewer = me ? me.client : "";
+    const keep = new Set(queue.map((q) => q.id));
+    list.querySelectorAll("li[data-id]").forEach((li) => { if (!keep.has(li.dataset.id) || li.dataset.viewer !== viewer) li.remove(); });
+    let prev = null;
+    for (const e of queue) {
+      let li = list.querySelector(`li[data-id="${CSS.escape(e.id)}"]`);
+      if (!li) {
+        li = el("li", { "data-id": e.id, "data-viewer": viewer },
+          el("div", {},
+            el("div", {}, el("button", { class: "pill-link mono", text: e.name, title: "Open details", onclick: () => openDrawer(e.id) })),
+            el("div", { class: "why" }, e.reason || "", e.rule_id ? el("span", { class: "muted mono", text: `  · ${e.rule_id}` }) : null),
+            el("div", { class: "who" }, [e.source || e.client, e.session_id && `session ${e.session_id}`, `key ${e.client}`, `asked ${fmtAgo(e.created_at)}`].filter(Boolean).join("  ·  ")),
+          ),
+          el("div", { class: "side" }, clockEl(e), decisionControls(e, true)),
+          el("div", { class: "inp", title: preview(e.input), text: preview(e.input) }),
+          signalsEl(e.signals),
+          storyDetails(e.id),
+        );
+      }
+      if (prev ? prev.nextSibling !== li : list.firstChild !== li) prev ? prev.after(li) : list.prepend(li);
+      prev = li;
+    }
+    tickClocks();
+  }
+
+  // ---------- drawer
+  async function openDrawer(id) {
+    selectedId = id;
+    document.querySelectorAll("#rows tr").forEach((tr) => tr.classList.toggle("sel", tr.dataset.id === id));
+    const d = $("#drawer");
+    d.classList.add("open"); d.setAttribute("aria-hidden", "false"); $("#backdrop").classList.add("on");
+    $("#drTitle").textContent = "Loading…"; $("#drSub").textContent = ""; $("#drBody").replaceChildren();
+    try {
+      const e = await api(`/v1/events/${encodeURIComponent(id)}`);
+      if (selectedId !== id) return;
+      renderDrawer(e);
+    } catch (err) {
+      $("#drTitle").textContent = "Couldn't load event";
+      $("#drBody").replaceChildren(el("p", { class: "muted", text: String(err.message || err) }));
+    }
+    $("#drClose").focus();
+  }
+  async function refreshDrawer() {
+    const id = drawerEvent && drawerEvent.id;
+    if (!id) return;
+    try {
+      const e = await api(`/v1/events/${encodeURIComponent(id)}`);
+      if (selectedId === id) renderDrawer(e);
+    } catch {}
+  }
+  function closeDrawer() {
+    const d = $("#drawer");
+    d.classList.remove("open"); d.setAttribute("aria-hidden", "true"); $("#backdrop").classList.remove("on");
+    const tr = selectedId && document.querySelector(`#rows tr[data-id="${CSS.escape(selectedId)}"]`);
+    selectedId = null; drawerEvent = null;
+    document.querySelectorAll("#rows tr.sel").forEach((t) => t.classList.remove("sel"));
+    if (tr) tr.focus();
+  }
+  function approvalBanner(e) {
+    const when = e.decided_at ? `  ·  ${new Date(e.decided_at).toLocaleString()}` : "";
+    const note = e.decision_note && e.decided_by !== "timeout" ? el("div", { class: "sec", style: "margin-top:4px" }, "“", e.decision_note, "”") : null;
+    if (e.status === "awaiting_approval") {
+      return el("div", { class: "banner awaiting" },
+        el("div", {}, el("b", { text: "Waiting for a human: " }), e.reason || "", e.rule_id ? el("span", { class: "muted mono", text: `  (${e.rule_id})` }) : null),
+        el("div", { style: "margin-top:4px" }, clockEl(e),
+          e.approvers && e.approvers.length ? el("span", { class: "hint", text: `  ·  approvers: ${e.approvers.join(", ")}` }) : null),
+        decisionControls(e, false));
+    }
+    if (!e.decided_by) return null;
+    if (e.decided_by === "timeout") {
+      return el("div", { class: "banner " + (e.decision === "allow" ? "approved" : "denied") },
+        el("b", { text: `Approval timed out, ${e.decision === "allow" ? "allowed" : "denied"} automatically` }), when,
+        el("div", { class: "muted", style: "margin-top:4px", text: `Rule: ${e.reason || e.rule_id || ""}` }));
+    }
+    return el("div", { class: "banner " + (e.decision === "allow" ? "approved" : "denied") },
+      el("b", { text: `${e.decision === "allow" ? "Approved" : "Rejected"} by ${e.decided_by}` }), when, note,
+      el("div", { class: "muted", style: "margin-top:4px", text: `Held by: ${e.reason || ""}${e.rule_id ? " (" + e.rule_id + ")" : ""}` }));
+  }
+  // ---------- the story behind an action: history-check warnings + what the agent did just before
+  const SIGNAL_TITLES = {
+    impersonation: "Possible scam", payment_request_in_message: "Payment requested in a message",
+    repeat_of_rejected: "Already rejected before", duplicate_change: "Done before",
+  };
+  function signalsEl(signals) {
+    if (!signals || !signals.length) return null;
+    return el("div", { class: "signals" }, signals.map((s) => el("div", { class: "signal " + s.effect },
+      el("b", { text: "⚠ " + (SIGNAL_TITLES[s.check] || s.check) + ": " }), s.message)));
+  }
+  function summarizeInput(v) {
+    if (v == null) return "";
+    if (typeof v !== "object") return String(v).slice(0, 140);
+    return Object.entries(v).slice(0, 4).map(([k, x]) => `${k}: ${typeof x === "object" ? JSON.stringify(x) : x}`).join(" · ").slice(0, 160);
+  }
+  function summarizeOutput(t) {
+    if (!t) return null;
+    const from = t.match(/"from"\s*:\s*"([^"]+)"/g), subject = t.match(/"subject"\s*:\s*"([^"]+)"/);
+    if (from && from.length === 1) {
+      const body = t.match(/"body"\s*:\s*"([^"]{0,220})/);
+      return `✉ from ${from[0].replace(/.*"from"\s*:\s*"/, "").replace(/"$/, "")}${subject ? ` — “${subject[1]}”` : ""}${body ? `: ${body[1]}…` : ""}`;
+    }
+    if (from && from.length > 1) return "Listed several messages";
+    return t.length > 180 ? t.slice(0, 180) + "…" : t;
+  }
+  function storyEl(steps) {
+    if (!steps.length) return el("div", { class: "muted", text: "Nothing before this in the same conversation." });
+    return el("ol", { class: "story" }, steps.map((s) => el("li", {},
+      el("div", { class: "st-line" }, statusEl(s.status), " ", el("span", { class: "mono", text: s.name }),
+        el("span", { class: "muted", text: `  ${fmtTime(s.created_at)}` }),
+        s.decided_by && s.decided_by !== "timeout" ? el("span", { class: "muted", text: `  · ${s.decision === "allow" ? "approved" : "rejected"} by ${s.decided_by}${s.decision_note ? ": “" + s.decision_note + "”" : ""}` }) : null),
+      s.input && Object.keys(s.input).length ? el("div", { class: "st-in", text: summarizeInput(s.input) }) : null,
+      summarizeOutput(s.output) ? el("div", { class: "st-out", text: summarizeOutput(s.output) }) : null,
+    )));
+  }
+  async function loadStory(id, box) {
+    try {
+      const r = await api(`/v1/events/${encodeURIComponent(id)}/context`);
+      box.replaceChildren(box.firstChild, storyEl(r.steps));
+    } catch { box.replaceChildren(box.firstChild, el("div", { class: "muted", text: "Couldn't load the history." })); }
+  }
+  function storyDetails(id) {
+    const d = el("details", { class: "story-d" }, el("summary", { text: "What led to this" }), el("div", { class: "muted", text: "Loading…" }));
+    d.addEventListener("toggle", () => { if (d.open && !d.dataset.loaded) { d.dataset.loaded = "1"; loadStory(id, d); } });
+    return d;
+  }
+
+  function renderDrawer(e) {
+    drawerEvent = e;
+    $("#drTitle").textContent = e.name;
+    $("#drSub").replaceChildren(statusEl(e.status), `  ·  ${new Date(e.created_at).toLocaleString()}`);
+    const body = $("#drBody");
+    const kids = [approvalBanner(e)];
+    if (e.status === "denied" && !e.decided_by) kids.push(el("div", { class: "banner denied" }, el("b", { text: "Blocked: " }), e.reason || "", e.rule_id ? el("span", { class: "muted mono", text: `  (${e.rule_id})` }) : null));
+    kids.push(signalsEl(e.signals));
+    const story = el("div", { class: "blk" }, el("h4", { text: "What led to this" }), el("div", { class: "muted", text: "Loading…" }));
+    kids.push(story);
+    loadStory(e.id, story);
+    if (e.status === "failed" && e.error) kids.push(el("div", { class: "banner failed" }, el("b", { text: "Error: " }), e.error));
+    const filt = (k, v) => v ? el("span", {}, el("span", { class: "mono", text: v }), " ",
+      el("button", { class: "linkish", text: "filter", onclick: () => { closeDrawer(); setFilter(k, v); } })) : el("span", { class: "muted", text: "—" });
+    const kv = [
+      ["Event ID", el("span", {}, el("span", { class: "mono", text: e.id }), " ", el("button", { class: "linkish", text: "copy", onclick: (ev) => copy(e.id, ev.target) }))],
+      ["Kind", e.kind], ["Decision", `${e.decision}${e.reason ? " — " + e.reason : ""}`], ["Rule", e.rule_id || "—"],
+      ["Source", filt("source", e.source)], ["Session", filt("session_id", e.session_id)],
+      ["Client", filt("client", e.client)], ["Client IP", e.client_ip || "—"],
+      ["Created", new Date(e.created_at).toLocaleString() + "  (" + fmtAgo(e.created_at) + ")"],
+      ["Completed", e.completed_at ? new Date(e.completed_at).toLocaleString() : "—"],
+      ["Duration", fmtDur(e.duration_ms) || "—"],
+    ];
+    kids.push(el("dl", { class: "kv" }, kv.flatMap(([k, v]) => [el("dt", { text: k }), el("dd", {}, v)])));
+    const block = (title, val) => {
+      if (val == null || (typeof val === "object" && !Array.isArray(val) && !Object.keys(val).length)) return null;
+      const txt = typeof val === "string" ? val : JSON.stringify(val, null, 2);
+      return el("div", { class: "blk" },
+        el("h4", {}, title, el("button", { class: "linkish", text: "copy", onclick: (ev) => copy(txt, ev.target) })),
+        el("pre", { text: txt }));
+    };
+    kids.push(block("Input", e.input), block("Output", e.output), e.status !== "failed" ? block("Error", e.error) : null, block("Metadata", e.metadata));
+    body.replaceChildren(...kids.filter(Boolean));
+    tickClocks();
+  }
+  async function copy(text, btn) {
+    try { await navigator.clipboard.writeText(text); const o = btn.textContent; btn.textContent = "copied"; setTimeout(() => (btn.textContent = o), 1200); } catch {}
+  }
+
+  // ---------- key dialog
+  function openKeyDialog(wasWrong) {
+    const dlg = $("#keyDlg");
+    if (dlg.open) return;
+    $("#keyErr").textContent = wasWrong ? "That key was rejected." : "";
+    $("#keyInput").value = "";
+    dlg.showModal();
+    $("#keyInput").focus();
+  }
+  $("#keyForm").addEventListener("submit", () => {
+    apiKey = $("#keyInput").value.trim();
+    store.set(apiKey);
+    me = null;
+    reload();
+  });
+  $("#keyCancel").addEventListener("click", () => $("#keyDlg").close());
+  $("#keyBtn").addEventListener("click", () => openKeyDialog(false));
+
+  // ---------- wiring
+  document.querySelectorAll("#range button").forEach((b) => b.addEventListener("click", () => {
+    state.range = b.dataset.r; syncUrl(); renderFilters(); reload();
+  }));
+  let debounce;
+  ["q", "kind", "source", "session_id"].forEach((k) => $("#" + k).addEventListener("input", (ev) => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => setFilter(k, ev.target.value.trim()), 300);
+  }));
+  $("#status").addEventListener("change", (ev) => setFilter("status", ev.target.value));
+  $("#refresh").addEventListener("click", reload);
+  $("#more").addEventListener("click", () => { const g = gen; run(g, () => loadEvents(true, g)); });
+  $("#drClose").addEventListener("click", closeDrawer);
+  $("#backdrop").addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && selectedId && !$("#keyDlg").open) closeDrawer();
+    if (ev.key === "/" && document.activeElement === document.body) { ev.preventDefault(); $("#q").focus(); }
+  });
+  $("#tableToggle").addEventListener("click", (ev) => {
+    const t = $("#chartTable"), open = t.hidden;
+    t.hidden = !open;
+    ev.target.setAttribute("aria-expanded", String(open));
+    ev.target.textContent = open ? "Hide table" : "View as table";
+  });
+  $("#auto").addEventListener("change", (ev) => { try { localStorage.setItem("gw.auto", ev.target.checked ? "1" : "0"); } catch {} });
+  setInterval(() => {
+    if ($("#keyDlg").open) return;
+    if ($("#auto").checked && !document.hidden) live();
+    // The approval queue refreshes even when Live is off or the tab is in the background,
+    // so the "(n) Needs approval" tab title stays accurate.
+    else loadQueue().catch(() => {});
+  }, 5000);
+  setInterval(tickClocks, 1000);
+  let rz;
+  window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => lastStats && renderChart(lastStats), 120); });
+
+  // ---------- views (tabs)
+  function showView(name) {
+    if (!["activity", "team", "reports", "settings"].includes(name)) name = "activity";
+    view = name;
+    document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
+    document.querySelectorAll("#tabs a").forEach((a) => { if (a.dataset.view === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+    if (location.hash !== "#" + name) history.replaceState(null, "", location.pathname + location.search + (name === "activity" ? "" : "#" + name));
+    loadView().catch(() => {});
+  }
+  function loadView() {
+    if (!me) return Promise.resolve();  // reload() calls this again once we know who's signed in
+    if (view === "team") return loadTeam();
+    if (view === "reports") return loadReports();
+    if (view === "settings") return loadSettings();
+    return Promise.resolve();
+  }
+  window.addEventListener("hashchange", () => showView(location.hash.slice(1)));
+  const fmtDate = (iso) => iso ? new Date(iso).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+
+  // ---------- emergency stop
+  let controlsState = { all: null, agents: {} };
+  async function loadControls() {
+    controlsState = await api("/v1/controls");
+    const b = $("#stopBanner"), s = controlsState.all;
+    const agentsStopped = Object.keys(controlsState.agents || {});
+    if (s) {
+      b.hidden = false;
+      b.replaceChildren(el("b", { text: "⏹ All agents are stopped." }),
+        el("span", { text: `By ${s.by} ${fmtAgo(s.at)}${s.reason ? " — " + s.reason : ""}. Every action they try is blocked.` }),
+        me && me.is_admin ? el("button", { class: "btn", text: "Resume all agents", onclick: () => resume(null) }) : null);
+    } else if (agentsStopped.length) {
+      b.hidden = false;
+      b.replaceChildren(el("b", { text: `⏹ Stopped: ${agentsStopped.join(", ")}` }),
+        el("span", { text: "Other agents are running normally. Manage per agent in Reports." }));
+    } else b.hidden = true;
+    $("#stopBtn").textContent = s ? "⏹ Agents stopped" : "⏹ Stop agents";
+    $("#stopBtn").disabled = !!s;
+  }
+  let stopTarget = null;
+  function askStop(agent) {
+    stopTarget = agent;
+    $("#stopWhat").textContent = agent
+      ? `Every action “${agent}” tries will be blocked until an admin resumes it. Other agents keep working.`
+      : "Every action any agent tries will be blocked immediately, until an admin resumes them. Actions already running aren't interrupted.";
+    $("#stopReason").value = "";
+    $("#stopDlg").showModal();
+    $("#stopReason").focus();
+  }
+  $("#stopBtn").addEventListener("click", () => askStop(null));
+  $("#stopCancel").addEventListener("click", () => $("#stopDlg").close());
+  $("#stopForm").addEventListener("submit", async () => {
+    try {
+      await apiPost("/v1/controls/stop", { agent: stopTarget, reason: $("#stopReason").value.trim() || null });
+      toast(stopTarget ? `Stopped ${stopTarget}` : "All agents stopped");
+      await loadControls(); if (view === "reports") loadReports();
+    } catch (err) { toast(err.message); }
+  });
+  async function resume(agent) {
+    try {
+      await apiPost("/v1/controls/resume", { agent });
+      toast(agent ? `Resumed ${agent}` : "All agents resumed");
+      await loadControls(); if (view === "reports") loadReports();
+    } catch (err) { toast(err.message); }
+  }
+
+  // ---------- team
+  async function loadTeam() {
+    const data = await api("/v1/team");
+    $("#teamSub").textContent = data.managed_by_env ? "managed by the GATEWAY_API_KEYS setting" : `${data.members.length} keys`;
+    const admin = me && me.is_admin && !data.managed_by_env;
+    $("#addMemberCard").hidden = !admin;
+    const access = (m) => m.kind === "agent" ? "Asks permission" : m.roles.includes("admin") ? "Admin" : m.approver ? "Can approve" : "Can view";
+    $("#teamRows").replaceChildren(...data.members.map((m) => el("tr", {},
+      el("td", {}, el("b", { text: m.name }), m.name === me.client ? el("span", { class: "muted", text: "  (you)" }) : null),
+      el("td", { class: "sec", text: m.kind === "agent" ? "🤖 AI agent" : "👤 Person" }),
+      el("td", { text: access(m) }),
+      el("td", {}, m.roles.length ? m.roles.map((r) => el("span", { class: "tag" + (r === "admin" ? " admin" : ""), text: r })) : el("span", { class: "muted", text: "—" })),
+      el("td", { class: "sec", text: fmtDate(m.created_at) }),
+      el("td", { class: "num" }, admin && m.name !== me.client ? [
+        m.kind === "person" ? el("button", { class: "linkish", text: "Edit", onclick: () => editMember(m) }) : null, " ",
+        el("button", { class: "linkish", style: "color:var(--critical)", text: "Remove", onclick: () => removeMember(m) }),
+      ] : null),
+    )));
+  }
+  function editMember(m) {
+    const roles = prompt(`Roles for ${m.name} (comma separated, e.g. finance, admin):`, m.roles.join(", "));
+    if (roles === null) return;
+    const approver = confirm(`Can ${m.name} approve held actions?\n\nOK = yes, Cancel = view only`);
+    apiSend("PATCH", `/v1/team/${encodeURIComponent(m.name)}`, { roles: roles.split(",").map((r) => r.trim()).filter(Boolean), approver })
+      .then(() => { toast(`Updated ${m.name}`); loadTeam(); }).catch((err) => toast(err.message));
+  }
+  function removeMember(m) {
+    if (!confirm(`Remove ${m.name}? Their key stops working immediately.`)) return;
+    apiSend("DELETE", `/v1/team/${encodeURIComponent(m.name)}`).then(() => { toast(`Removed ${m.name}`); loadTeam(); }).catch((err) => toast(err.message));
+  }
+  const addForm = $("#addMember");
+  const syncKind = () => addForm.querySelectorAll(".person-only").forEach((n) => (n.hidden = addForm.kind.value === "agent"));
+  addForm.kind.addEventListener("change", syncKind);
+  addForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const f = addForm, person = f.kind.value === "person";
+    try {
+      const r = await apiPost("/v1/team", { name: f.name.value.trim(), kind: f.kind.value, approver: person && f.access.value === "approver",
+        roles: person ? f.roles.value.split(",").map((x) => x.trim()).filter(Boolean) : [] });
+      const box = $("#newKey");
+      box.hidden = false;
+      box.replaceChildren(el("b", { text: `Key for ${r.name} — copy it now, it won't be shown again:` }), el("br"), el("code", { text: r.key }), " ",
+        el("button", { class: "linkish", text: "copy", onclick: (e) => copy(r.key, e.target) }),
+        el("div", { class: "muted", style: "margin-top:6px", text: person
+          ? "Send it to them privately. They paste it into this dashboard, or use 📱 Phone after signing in."
+          : `For an agent: python connect.py wrap --agent ${r.name} --key <this key> … (see README)` }));
+      f.reset(); syncKind(); loadTeam();
+    } catch (err) { toast(err.message); }
+  });
+
+  // ---------- reports
+  let repDays = 7;
+  try { repDays = +localStorage.getItem("gw.repDays") || 7; } catch {}
+  document.querySelectorAll("#repRange button").forEach((b) => b.addEventListener("click", () => {
+    repDays = +b.dataset.d; try { localStorage.setItem("gw.repDays", repDays); } catch {} loadReports();
+  }));
+  const dur = (s) => s == null ? "—" : s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`;
+  const cells = (tbody, rows, empty) => $(tbody).replaceChildren(...(rows.length ? rows : [el("tr", {}, el("td", { colspan: "9", class: "muted", text: empty }))]));
+  async function loadReports() {
+    document.querySelectorAll("#repRange button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.d === repDays)));
+    const [r, log] = await Promise.all([api("/v1/reports/summary", { days: repDays }), api("/v1/audit/log", { limit: 40 })]);
+    const s = r.by_status, a = r.approvals;
+    $("#printHead").replaceChildren(el("h1", { text: `AI agent activity report — last ${repDays === 1 ? "24 hours" : repDays + " days"}` }),
+      el("div", { class: "muted", text: `Generated ${fmtDate(r.generated_at)} by ${me.client} · audit trail ${r.audit.ok ? "verified" : "BROKEN"} · fingerprint ${r.audit.head_hash || "—"}` }));
+    // Status icon + this report's own wording (the tiles count different things than the status names).
+    const iconLabel = (status, text) => el("span", { class: "st " + status }, el("i", { "aria-hidden": "true", text: STATUS[status].icon }), text);
+    const tile = (label, value, sub, status) => el("div", { class: "card tile", style: "cursor:default" },
+      el("div", { class: "lbl" }, status ? iconLabel(status, label) : label), el("div", { class: "val", text: value }), el("div", { class: "pct", text: sub || "" }));
+    $("#repTiles").replaceChildren(
+      tile("Agent actions", nf.format(r.total), `${r.agents.length} agent${r.agents.length === 1 ? "" : "s"}`),
+      tile("Blocked", nf.format(s.denied || 0), "by rules, people or stop", "denied"),
+      tile("Held for a person", nf.format(a.held), `${a.waiting_now} waiting now`, "awaiting_approval"),
+      tile("Approved by a person", nf.format(a.approved), `${a.rejected} rejected · ${a.timed_out} timed out`, "completed"),
+      tile("Time to decide", dur(a.median_seconds_to_decide), "median"),
+      tile("Failed", nf.format(s.failed || 0), "errors from tools", "failed"));
+    const au = r.audit;
+    $("#auditCard").replaceChildren(el("div", { class: "card-head" }, el("h2", { text: "Tamper check" }),
+        el("button", { class: "linkish", text: "Re-check now", onclick: loadReports })),
+      el("div", { class: "audit-ok " + (au.ok ? "ok" : "bad") }, el("div", { class: "big", text: au.ok ? "✓" : "!" }),
+        el("div", {}, el("b", { text: au.ok ? "Audit trail intact" : `Audit trail broken at entry #${au.first_bad_seq}` }),
+          el("div", { class: "sec", text: `${nf.format(au.entries)} entries. ${au.message}.` }),
+          el("div", { class: "muted", style: "margin-top:6px;font-size:12.5px", text: "Each entry is chained to the one before by a fingerprint, so any edit or deletion shows up here. Keep this fingerprint to prove later that today's history hasn't changed:" }),
+          el("div", { class: "fp", text: au.head_hash || "—" }))));
+    const stoppedAgents = controlsState.agents || {};
+    cells("#repAgents", r.agents.map((g) => el("tr", {},
+      el("td", {}, el("b", { text: g.agent }), stoppedAgents[g.agent] ? el("span", { class: "tag", style: "border-color:var(--critical);color:var(--critical)", text: "stopped" }) : null),
+      ...["total", "denied", "held", "approved", "rejected", "failed"].map((k) => el("td", { class: "num", text: nf.format(g[k] || 0) })),
+      el("td", { class: "sec", text: fmtAgo(g.last_seen) }),
+      el("td", { class: "num" }, me.is_admin && stoppedAgents[g.agent] ? el("button", { class: "linkish", text: "Resume", onclick: () => resume(g.agent) })
+        : (me.can_approve || me.is_admin) && !stoppedAgents[g.agent] ? el("button", { class: "linkish", style: "color:var(--critical)", text: "Stop", onclick: () => askStop(g.agent) }) : null),
+    )), "No agent activity in this period.");
+    cells("#repApprovers", a.by_approver.map((p) => el("tr", {}, el("td", { text: p.approver }),
+      el("td", { class: "num", text: p.approved }), el("td", { class: "num", text: p.rejected }))), "No decisions yet.");
+    cells("#repBlocked", r.blocked_by_rule.map((b) => el("tr", {}, el("td", { class: "mono", text: b.rule_id || "—" }),
+      el("td", { class: "wrap sec", text: b.reason || "" }), el("td", { class: "num", text: b.count }))), "Nothing blocked.");
+    cells("#repTools", r.top_tools.map((t) => el("tr", {}, el("td", { class: "mono", text: t.name }), el("td", { class: "num", text: nf.format(t.count) }))), "No calls.");
+    const describe = (e) => {
+      const d = e.detail || {};
+      const map = {
+        "event.created": () => `${d.source || "?"} asked to run ${d.name} → ${d.status}${d.rule_id ? " (" + d.rule_id + ")" : ""}`,
+        "event.approved": () => `approved${d.via === "link" ? " from a notification link" : ""}${d.note ? ": “" + d.note + "”" : ""}`,
+        "event.rejected": () => `rejected${d.via === "link" ? " from a notification link" : ""}${d.note ? ": “" + d.note + "”" : ""}`,
+        "event.expired": () => `nobody decided in time → ${d.outcome}`,
+        "event.completed": () => `finished${d.duration_ms != null ? " in " + fmtDur(d.duration_ms) : ""}`,
+        "event.failed": () => `failed: ${d.error || ""}`,
+        "controls.stopped": () => `${e.target === "*" ? "stopped ALL agents" : "stopped " + e.target}${d.reason ? ": " + d.reason : ""}`,
+        "controls.resumed": () => e.target === "*" ? "resumed all agents" : `resumed ${e.target}`,
+        "team.added": () => `added ${e.target} (${d.kind}${d.approver ? ", can approve" : ""}${d.roles && d.roles.length ? ", " + d.roles.join("/") : ""})`,
+        "team.updated": () => `changed ${e.target}: ${d.approver ? "can approve" : "view only"}${d.roles && d.roles.length ? ", " + d.roles.join("/") : ""}`,
+        "team.removed": () => `removed ${e.target}`,
+        "settings.updated": () => `changed settings: ${(d.changed || []).join(", ")}`,
+        "audit.exported": () => `downloaded the audit CSV (${d.days} days)`,
+        "phone.link_shown": () => "opened the phone link QR code",
+      };
+      return (map[e.action] || (() => e.action))();
+    };
+    cells("#repAudit", log.entries.map((e) => el("tr", {},
+      el("td", { class: "sec", title: e.at, text: fmtDate(e.at) }),
+      el("td", { text: e.actor || "system" }),
+      el("td", { class: "mono sec", text: e.action }),
+      el("td", { class: "wrap", text: describe(e) }))), "Nothing recorded yet.");
+  }
+  $("#printBtn").addEventListener("click", () => window.print());
+  $("#csvBtn").addEventListener("click", async () => {
+    try {
+      const res = await fetch(`/v1/audit/export.csv?days=${repDays}`, { headers: { "X-Gateway-Key": apiKey } });
+      if (!res.ok) throw new Error(`export failed (${res.status})`);
+      const url = URL.createObjectURL(await res.blob());
+      el("a", { href: url, download: `squidbrake-audit-${new Date().toISOString().slice(0, 10)}.csv` }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      loadReports();
+    } catch (err) { toast(err.message); }
+  });
+
+  // ---------- settings
+  const sForm = $("#settingsForm");
+  async function loadSettings() {
+    const [s, team] = await Promise.all([api("/v1/settings"), api("/v1/team")]);
+    for (const k of ["public_url", "ntfy_topic", "slack_webhook"]) sForm[k].value = s[k] || "";
+    sForm.weekly_digest.checked = !!s.weekly_digest;
+    const approvers = team.members.filter((m) => m.approver).map((m) => m.name);
+    $("#notifyAs").replaceChildren(...approvers.map((n) => el("option", { value: n, text: n, selected: n === s.notify_as ? "" : null })));
+  }
+  $("#useOrigin").addEventListener("click", () => { sForm.public_url.value = location.origin; });
+  $("#genTopic").addEventListener("click", () => {
+    const b = new Uint8Array(9); crypto.getRandomValues(b);
+    sForm.ntfy_topic.value = "gw-" + Array.from(b, (x) => x.toString(36).padStart(2, "0")).join("").slice(0, 16);
+  });
+  sForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    try {
+      await apiSend("PUT", "/v1/settings", { public_url: sForm.public_url.value.trim(), ntfy_topic: sForm.ntfy_topic.value.trim(),
+        slack_webhook: sForm.slack_webhook.value.trim(), notify_as: sForm.notify_as.value || null, weekly_digest: sForm.weekly_digest.checked });
+      $("#settingsMsg").textContent = "Saved ✓"; setTimeout(() => ($("#settingsMsg").textContent = ""), 3000);
+    } catch (err) { $("#settingsMsg").textContent = err.message; }
+  });
+  $("#testNotify").addEventListener("click", async () => {
+    try {
+      const r = await apiPost("/v1/settings/test");
+      $("#settingsMsg").textContent = (r.sent.length ? `Sent to ${r.sent.join(" and ")} ✓ ` : "") + r.errors.join(" · ");
+    } catch (err) { $("#settingsMsg").textContent = err.message; }
+  });
+  $("#ruleTest").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    let input = f.input.value.trim();
+    try { input = input ? JSON.parse(input) : null; } catch { /* plain text input is fine */ }
+    try {
+      const r = await apiPost("/v1/policy/check", { name: f.name.value.trim(), source: f.source.value.trim() || null, input });
+      const what = { allow: "✓ Allowed", deny: "✕ Blocked", review: "? Held for a person" }[r.decision];
+      $("#ruleResult").textContent = `${what} — ${r.reason}${r.rule_id ? " (rule " + r.rule_id + ")" : ""}`
+        + (r.decision === "review" ? `; if nobody decides within ${Math.round(r.timeout_seconds / 60)} min it's ${r.on_timeout === "allow" ? "allowed" : "blocked"}${r.approvers ? "; who can approve: " + r.approvers.join(", ") : ""}` : "");
+    } catch (err) { $("#ruleResult").textContent = err.message; }
+  });
+
+  // ---------- phone
+  $("#phoneBtn").addEventListener("click", async () => {
+    try {
+      const r = await api("/v1/me/phone-link");
+      $("#phoneAs").textContent = r.as;
+      $("#phoneQr").src = r.qr;
+      $("#phoneWarn").hidden = r.public;
+      $("#phoneDlg").showModal();
+    } catch (err) { toast(err instanceof AuthError ? "Sign in first" : err.message); }
+  });
+
+  renderFilters();
+  showView(location.hash.slice(1));
+  reload().then(() => { if (linkedEvent) openDrawer(linkedEvent); });
+})();
+</script>
+</body>
+</html>

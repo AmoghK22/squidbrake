@@ -1,0 +1,115 @@
+# Squidbrake rules - hot-reloaded on save, no restart needed.
+#
+# Policy: agents may LOOK at anything (read, list, search), but anything that CHANGES something
+# (sends, refunds, pays, updates, deletes, runs a command) waits for a person to approve it.
+#
+# Rules are checked top to bottom; the FIRST match wins. If none match, `default` applies.
+# match fields (all optional, all must match):
+#   kind, name, source, client, session_id   glob pattern or list of globs (case-insensitive), e.g. "shell*"
+#   input_regex                              regex searched in the JSON of the call's input
+# action: allow | deny | review
+#
+# review = hold the call until a person approves or rejects it (dashboard, phone, Slack).
+#   timeout_seconds  how long to wait for a person (default APPROVAL_TIMEOUT, 300)
+#   on_timeout       deny (default) | allow  - what happens if nobody decides in time
+#   approvers        who may decide: key names or roles, e.g. ["role:finance", "priya"]; default = any approver
+# A key can never approve its own request.
+
+default: review
+default_reason: This changes something, so a person has to approve it
+
+# History checks look at what happened BEFORE an action, not just the action itself.
+# Each one: block (stop it), review (a person decides), warn (flag it for the approver), off.
+history_checks:
+  company_domains: [acme.com]          # your real email domains; look-alikes (acrne.com, acme-corp.com) are suspicious
+  lookback_hours: 24
+  repeat_of_rejected: block            # an action a person already rejected (same tool + same target) is blocked, with their note
+  impersonation: block                 # moving money right after reading a message from a look-alike of your domain
+  payment_request_in_message: review   # moving money right after reading a message that asks for a payment
+  duplicate_change: warn               # the same change on the same thing again (e.g. a 2nd refund on one charge)
+
+rules:
+  # ---- never allowed
+  - id: block-destructive-shell
+    action: deny
+    reason: Destructive shell command
+    match:
+      name: ["shell*", "bash*", "powershell*", "exec*", "run_command*"]
+      input_regex: 'rm\s+-(rf|fr)\s+(/|~|\*)|mkfs|dd\s+if=|:\(\)\s*\{|shutdown|reboot|Remove-Item\s.*-Recurse.*\s(C:\\\\|~|\$HOME)'
+
+  - id: block-sql-drop
+    action: deny
+    reason: Dropping or truncating tables is not allowed
+    match:
+      name: ["sql*", "db*", "*query*"]
+      input_regex: '\b(drop\s+(table|database|schema)|truncate\s+table)\b'
+
+  - id: block-secret-files
+    action: deny
+    reason: Reading secret files is not allowed
+    match:
+      name: ["read*", "file*", "cat*"]
+      input_regex: '\.env\b|id_rsa|\.pem\b|credentials'
+
+  # ---- looking is fine: reading, listing, searching run without asking (and are still recorded)
+  - id: allow-reads
+    action: allow
+    reason: Only looks at information
+    match:
+      name: ["*.list*", "*_list*", "list*", "*.get*", "*_get*", "get*", "*.read*", "*_read*", "*.find*", "*_find*", "find*",
+             "*.search*", "*_search*", "search*", "*.describe*", "*_describe*", "*.query*", "*.fetch*", "*_fetch*",
+             "*.view*", "*_view*", "*.show*", "*_show*", "*.count*", "*_count*", "*.lookup*", "*_lookup*",
+             # Claude Code's own read-only / housekeeping tools
+             "Read", "Grep", "Glob", "LS", "WebSearch", "WebFetch", "NotebookRead", "ToolSearch", "TodoWrite",
+             "Task", "Agent", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "Skill", "BashOutput", "TaskOutput",
+             "ListMcpResourcesTool", "ReadMcpResourceTool"]
+
+  # ---- changes: a person decides (these give the approver a clearer reason than the default)
+  - id: approve-money-out
+    action: review
+    reason: Bank transfers, wires and payouts need finance sign-off
+    timeout_seconds: 900
+    approvers: ["role:finance", "role:admin"]
+    match:
+      name: ["*transfer*", "*wire*", "*payout*"]
+
+  - id: approve-refunds
+    action: review
+    reason: Refund - money goes back to a customer
+    timeout_seconds: 600
+    match:
+      name: ["*refund*"]
+
+  - id: approve-outbound-email
+    action: review
+    reason: Email to someone outside the company
+    timeout_seconds: 600
+    match:
+      name: ["email.send", "mail.*", "*send_email*", "*email_send*", "*send_mail*", "*gmail*send*"]
+      input_regex: '"to"\s*:\s*"[^"]*@(?!acme\.com")'   # change acme.com to your company's email domain
+
+  - id: approve-writes-to-db
+    action: review
+    reason: Changes data in the database
+    match:
+      name: ["sql*", "db*", "*query*"]
+      input_regex: '\b(delete\s+from|update\s+\S+\s+set|alter\s+table|insert\s+(or\s+\w+\s+)?into|replace\s+into)\b'
+
+  - id: approve-git-push
+    action: review
+    reason: Pushing code to a remote
+    match:
+      name: ["bash*", "shell*", "powershell*", "run_command*"]
+      input_regex: 'git\s+push'
+
+  - id: approve-prod-deploys
+    action: review
+    reason: Production deploy
+    timeout_seconds: 900
+    match:
+      name: ["deploy*", "release*"]
+      input_regex: '\bprod(uction)?\b'
+
+# Upstreams for the HTTP proxy:  /proxy/<name>/<path>  ->  <url>/<path>
+upstreams:
+  httpbin: https://httpbin.org

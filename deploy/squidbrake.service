@@ -1,0 +1,20 @@
+# systemd unit for running without Docker on a Linux VM.
+#   sudo cp deploy/squidbrake.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now squidbrake
+#   journalctl -u squidbrake -f
+[Unit]
+Description=Squidbrake
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=gateway
+WorkingDirectory=/opt/squidbrake
+EnvironmentFile=/opt/squidbrake/.env
+ExecStart=/opt/squidbrake/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8080 --workers 1 --proxy-headers
+Restart=always
+RestartSec=2
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Approvals</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f4f3f0; --card: #fcfcfb; --soft: #f0efec; --border: #e2e1dc;
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
+  --good: #0ca30c; --good-ink: #ffffff; --bad: #d03b3b; --warn: #fab219; --warn-ink: #3d2c00; --accent: #2a78d6;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #121211; --card: #1a1a19; --soft: #242422; --border: #2f2f2c;
+    --text: #ffffff; --text-2: #c3c2b7; --muted: #8f8e86; --accent: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #121211; --card: #1a1a19; --soft: #242422; --border: #2f2f2c;
+  --text: #ffffff; --text-2: #c3c2b7; --muted: #8f8e86; --accent: #3987e5;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--page); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+       -webkit-font-smoothing: antialiased; }
+main { max-width: 560px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px 40px; }
+header { display: flex; align-items: center; gap: 10px; margin: 4px 0 16px; }
+header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+header .sp { flex: 1; }
+.pill { font-size: 12px; color: var(--text-2); background: var(--soft); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+.card.held { border-left: 5px solid var(--warn); }
+.kicker { font-size: 12.5px; color: var(--text-2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+h2 { font-size: 22px; line-height: 1.25; margin: 0 0 6px; word-break: break-word; }
+h2 code { font-family: var(--mono); font-size: 19px; }
+.why { color: var(--text-2); margin-bottom: 12px; }
+.meta { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; margin-bottom: 12px; }
+.meta dt { color: var(--muted); }
+.meta dd { margin: 0; word-break: break-word; }
+pre { margin: 0 0 14px; background: var(--soft); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+      font: 13px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; }
+.clock { font-size: 14px; color: var(--text-2); margin-bottom: 12px; font-variant-numeric: tabular-nums; }
+.clock.soon { color: var(--bad); font-weight: 600; }
+textarea { width: 100%; font: inherit; color: inherit; background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+           padding: 10px 12px; min-height: 44px; resize: vertical; margin-bottom: 12px; }
+.acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+button { font: inherit; cursor: pointer; border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--text);
+         padding: 14px 12px; font-weight: 650; min-height: 52px; }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.approve { background: var(--good); border-color: var(--good); color: var(--good-ink); font-size: 17px; }
+.reject { color: var(--bad); border-color: var(--bad); font-size: 17px; }
+.stop { width: 100%; background: var(--bad); border-color: var(--bad); color: #fff; }
+.result { display: flex; gap: 12px; align-items: flex-start; }
+.result .ic { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; color: #fff; flex: none; }
+.result.ok .ic { background: var(--good); }
+.result.no .ic { background: var(--bad); }
+.result.info .ic { background: var(--muted); }
+.result b { display: block; font-size: 18px; margin-bottom: 2px; }
+.muted { color: var(--muted); font-size: 14px; }
+.empty { text-align: center; color: var(--muted); padding: 40px 0; }
+.banner { border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; background: var(--bad); color: #fff; font-size: 15px; }
+input[type=password] { width: 100%; font: inherit; color: inherit; background: var(--page); border: 1px solid var(--border);
+                       border-radius: 10px; padding: 12px; margin: 8px 0 12px; }
+a { color: var(--accent); }
+.signal { border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 10px; background: var(--soft);
+          border: 1px solid var(--border); border-left: 5px solid var(--warn); }
+.signal.block { border-left-color: var(--bad); }
+.story-d { margin: 0 0 12px; }
+.story-d summary { cursor: pointer; color: var(--accent); font-size: 15px; padding: 4px 0; }
+.story { list-style: none; margin: 8px 0 0; padding: 0 0 0 14px; border-left: 2px solid var(--border); }
+.story li { margin-bottom: 10px; }
+.story code { font-family: var(--mono); font-size: 13px; }
+.story .step { font-size: 14px; background: var(--soft); border-radius: 8px; padding: 6px 9px; margin-top: 3px; word-break: break-word; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Squidbrake</h1>
+    <span class="sp"></span>
+    <span class="pill" id="who" hidden></span>
+  </header>
+  <div id="stopBanner" class="banner" hidden></div>
+  <div id="root"></div>
+  <p class="muted" id="foot"></p>
+</main>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (s) => document.querySelector(s);
+  const root = $("#root");
+  const tokenMatch = location.pathname.match(/^\/a\/([^/]+)$/);
+  const token = tokenMatch ? tokenMatch[1] : null;
+
+  // Key for the /m inbox: taken once from the #key=... link the dashboard shows as a QR code, then kept
+  // in this browser only (the fragment is never sent to the server) and removed from the address bar.
+  let key = "";
+  try { key = localStorage.getItem("gw.key") || ""; } catch {}
+  const frag = new URLSearchParams(location.hash.slice(1));
+  if (frag.get("key")) {
+    key = frag.get("key");
+    try { localStorage.setItem("gw.key", key); } catch {}
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+
+  function el(tag, attrs = {}, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v == null || v === false) continue;
+      if (k === "class") n.className = v;
+      else if (k === "text") n.textContent = v;
+      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v);
+    }
+    kids.flat().forEach((c) => c != null && n.append(c.nodeType ? c : document.createTextNode(String(c))));
+    return n;
+  }
+  async function call(method, path, body) {
+    const headers = { "Content-Type": "application/json" };
+    if (key && !token) headers["X-Gateway-Key"] = key;
+    const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    let data = null;
+    try { data = await res.json(); } catch {}
+    if (!res.ok) { const e = new Error((data && data.detail) || `${res.status}`); e.status = res.status; throw e; }
+    return data;
+  }
+  const pad = (n) => String(n).padStart(2, "0");
+  function when(iso) { return iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"; }
+  function ago(iso) {
+    const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
+    return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`;
+  }
+  function pretty(v) { return v == null ? "(no input)" : typeof v === "string" ? v : JSON.stringify(v, null, 2); }
+  function tick() {
+    document.querySelectorAll("[data-deadline]").forEach((c) => {
+      const s = Math.round((new Date(c.dataset.deadline) - Date.now()) / 1000);
+      const then = c.dataset.then === "allow" ? "allowed" : "denied";
+      c.textContent = s > 0 ? `Decide within ${Math.floor(s / 60)}:${pad(s % 60)} — otherwise it's ${then} automatically`
+                            : `Time's up — it will be ${then} automatically`;
+      c.classList.toggle("soon", s <= 60);
+    });
+  }
+  setInterval(tick, 1000);
+
+  function outcome(e) {
+    if (e.status === "awaiting_approval") return null;
+    if (!e.decided_by) return el("div", { class: "result info" }, el("div", { class: "ic", text: "i" }),
+      el("div", {}, el("b", { text: `Already ${e.status}` }), el("span", { class: "muted", text: e.reason || "" })));
+    const ok = e.decision === "allow";
+    const by = e.decided_by === "timeout" ? "Nobody decided in time" : `${ok ? "Approved" : "Rejected"} by ${e.decided_by}`;
+    return el("div", { class: "result " + (ok ? "ok" : "no") }, el("div", { class: "ic", text: ok ? "✓" : "✕" }),
+      el("div", {}, el("b", { text: e.decided_by === "timeout" ? `${by} — ${ok ? "allowed" : "denied"}` : by }),
+        el("span", { class: "muted", text: when(e.decided_at) + (e.decision_note ? ` · “${e.decision_note}”` : "") })));
+  }
+
+  // ---- the story: history warnings + what the agent did just before
+  const TITLES = { impersonation: "Possible scam", payment_request_in_message: "Payment requested in a message",
+                   repeat_of_rejected: "Already rejected before", duplicate_change: "Done before" };
+  function signalsEl(signals) {
+    if (!signals || !signals.length) return null;
+    return el("div", {}, signals.map((s) => el("div", { class: "signal " + s.effect },
+      el("b", { text: "⚠ " + (TITLES[s.check] || s.check) + ": " }), s.message)));
+  }
+  function stepText(s) {
+    const t = s.output || "";
+    const from = t.match(/"from"\s*:\s*"([^"]+)"/g), subject = t.match(/"subject"\s*:\s*"([^"]+)"/), body = t.match(/"body"\s*:\s*"([^"]{0,200})/);
+    if (from && from.length === 1) return `✉ ${from[0].replace(/.*"from"\s*:\s*"/, "").replace(/"$/, "")}${subject ? " — “" + subject[1] + "”" : ""}${body ? ": " + body[1] + "…" : ""}`;
+    if (from && from.length > 1) return "Listed several messages";
+    if (s.input && Object.keys(s.input).length) return Object.entries(s.input).slice(0, 3).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join(" · ");
+    return t.slice(0, 160);
+  }
+  function storyList(steps) {
+    if (!steps.length) return el("p", { class: "muted", text: "Nothing before this in the same conversation." });
+    return el("ol", { class: "story" }, steps.map((s) => el("li", {},
+      el("div", {}, el("code", { text: s.name }), el("span", { class: "muted", text: `  ${s.status.replace("_", " ")}${s.decided_by && s.decided_by !== "timeout" ? " · " + (s.decision === "allow" ? "approved" : "rejected") + " by " + s.decided_by : ""}` })),
+      el("div", { class: "step", text: stepText(s) }))));
+  }
+  function storyBox(e) {
+    const d = el("details", { class: "story-d" }, el("summary", { text: "What led to this" }));
+    const fill = (steps) => { d.append(storyList(steps)); d.dataset.loaded = "1"; };
+    if (e.context) { fill(e.context); if (e.signals && e.signals.length) d.open = true; }
+    else d.addEventListener("toggle", async () => {
+      if (!d.open || d.dataset.loaded) return;
+      try { fill((await call("GET", `/v1/events/${e.id}/context`)).steps); } catch { d.append(el("p", { class: "muted", text: "Couldn't load it." })); }
+    });
+    return d;
+  }
+
+  // One request, one card, two big buttons.
+  function card(e, decideFn) {
+    const done = outcome(e);
+    const note = el("textarea", { placeholder: "Note (optional) — the agent sees it", maxlength: "2000", "aria-label": "Note" });
+    const go = (what) => async (ev) => {
+      const btns = ev.target.closest(".acts").querySelectorAll("button");
+      btns.forEach((b) => (b.disabled = true));
+      try {
+        const d = await decideFn(what, note.value.trim() || null);
+        e.status = d.status; e.decision = d.decision; e.decided_by = d.decided_by; e.decided_at = new Date().toISOString(); e.decision_note = d.decision_note;
+        c.replaceWith(card(e, decideFn));
+      } catch (err) {
+        btns.forEach((b) => (b.disabled = false));
+        alert(err.message);
+      }
+    };
+    const c = el("section", { class: "card" + (done ? "" : " held") },
+      el("div", { class: "kicker", text: done ? "Request" : "Needs your decision" }),
+      el("h2", {}, e.source || e.client, " wants to run ", el("code", { text: e.name })),
+      el("div", { class: "why", text: (e.reason || "") + (e.rule_id ? ` (rule: ${e.rule_id})` : "") }),
+      signalsEl(e.signals),
+      storyBox(e),
+      el("dl", { class: "meta" },
+        el("dt", { text: "Agent" }), el("dd", { text: `${e.source || "—"} (key: ${e.client})` }),
+        el("dt", { text: "Asked" }), el("dd", { text: `${when(e.created_at)} · ${ago(e.created_at)}` }),
+        e.session_id ? [el("dt", { text: "Session" }), el("dd", { text: e.session_id })] : null),
+      el("pre", { text: pretty(e.input) }),
+      done || [
+        e.approval_deadline ? el("div", { class: "clock", "data-deadline": e.approval_deadline, "data-then": e.approval_on_timeout || "deny" }) : null,
+        note,
+        el("div", { class: "acts" },
+          el("button", { class: "reject", onclick: go("reject") }, "✕ Reject"),
+          el("button", { class: "approve", onclick: go("approve") }, "✓ Approve")),
+      ]);
+    return c;
+  }
+
+  // ---- mode 1: signed link from Slack / a phone notification (no key needed)
+  async function linkMode() {
+    try {
+      const e = await call("GET", `/v1/a/${token}`);
+      $("#who").textContent = `deciding as ${e.approver}`; $("#who").hidden = false;
+      root.replaceChildren(card(e, (what, note) => call("POST", `/v1/a/${token}/${what}`, { note })));
+      $("#foot").textContent = "This link works for this one request only.";
+      tick();
+    } catch (err) {
+      root.replaceChildren(el("section", { class: "card" }, el("div", { class: "result info" }, el("div", { class: "ic", text: "!" }),
+        el("div", {}, el("b", { text: "This link doesn't work" }), el("span", { class: "muted", text: err.message })))));
+    }
+  }
+
+  // ---- mode 2: /m inbox with your key
+  let me = null;
+  function askKey(msg) {
+    const input = el("input", { type: "password", placeholder: "gw_…", "aria-label": "Your key", autocomplete: "off" });
+    root.replaceChildren(el("section", { class: "card" },
+      el("h2", { text: "Sign in" }),
+      el("p", { class: "muted", text: msg || "Scan the QR code under “Link your phone” in the dashboard, or paste your key." }),
+      input,
+      el("button", { class: "approve", style: "width:100%", onclick: () => { key = input.value.trim(); try { localStorage.setItem("gw.key", key); } catch {} inbox(); } }, "Continue")));
+  }
+  async function inbox() {
+    if (!key) return askKey();
+    try {
+      me = me || await call("GET", "/v1/me");
+      $("#who").textContent = me.client; $("#who").hidden = false;
+      const [list, controls] = await Promise.all([
+        call("GET", "/v1/events?status=awaiting_approval&limit=100"),
+        call("GET", "/v1/controls"),
+      ]);
+      renderStop(controls);
+      const items = list.events.sort((a, b) => (a.approval_deadline || "").localeCompare(b.approval_deadline || ""));
+      const decideFn = (id) => (what, note) => call("POST", `/v1/events/${id}/${what}`, { note });
+      const typing = document.activeElement && document.activeElement.tagName === "TEXTAREA";
+      if (!typing) {
+        root.replaceChildren(...(items.length ? items.map((e) => card(e, decideFn(e.id))) :
+          [el("div", { class: "empty" }, el("div", { style: "font-size:36px", text: "✓" }), "Nothing is waiting for you.")]));
+      }
+      document.title = items.length ? `(${items.length}) Approvals` : "Approvals";
+      $("#foot").textContent = me.can_approve ? "Updates every few seconds." : `“${me.client}” can view but not approve.`;
+      tick();
+    } catch (err) {
+      if (err.status === 401) { key = ""; try { localStorage.removeItem("gw.key"); } catch {} askKey("That key was rejected. Try again."); }
+      else if (err.status === 403) askKey(err.message);
+      else $("#foot").textContent = "Can't reach the gateway right now; retrying…";
+    }
+  }
+  function renderStop(controls) {
+    const b = $("#stopBanner");
+    const s = controls && controls.all;
+    if ($("#stopBtn")) $("#stopBtn").hidden = !!s;
+    if (s) {
+      b.hidden = false;
+      b.replaceChildren(el("b", { text: "All agents are stopped" }), ` by ${s.by}${s.reason ? ": " + s.reason : ""}. An admin can resume them from the dashboard.`);
+    } else if (me && (me.can_approve || me.is_admin)) {
+      b.hidden = true;
+      if (!$("#stopBtn")) {
+        $("#foot").after(el("button", { id: "stopBtn", class: "stop", onclick: async () => {
+          const reason = prompt("Stop ALL agents now? Every action they try will be blocked until an admin resumes.\n\nReason:");
+          if (reason === null) return;
+          try { await call("POST", "/v1/controls/stop", { reason: reason || null }); inbox(); } catch (err) { alert(err.message); }
+        } }, "⏹ Emergency stop: block all agents"));
+      }
+    }
+  }
+
+  if (token) linkMode();
+  else { inbox(); setInterval(() => { if (!document.hidden) inbox(); }, 5000); }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+# Easiest: ./install.sh  (or ./install.sh your-domain.com for HTTPS). By hand:
+#   docker compose up -d                       -> http://localhost:8080/dashboard
+#   docker compose logs gateway                -> the keys printed on first start
+#   docker compose --profile https up -d       -> HTTPS via Caddy for DOMAIN (set in .env)
+services:
+  gateway:
+    build: .
+    restart: unless-stopped                   # comes back after crashes and reboots
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:${HOST_PORT:-8080}:8080"   # install.sh sets BIND_ADDR=127.0.0.1 when HTTPS is on
+    env_file:
+      - path: .env
+        required: false                       # every setting is optional
+    environment:
+      PORT: "8080"
+      RULES_PATH: /app/config/rules.yaml
+    volumes:
+      - gateway-data:/app/data                # keys + database, survive rebuilds
+      - ./:/app/config:ro                     # rules.yaml edits apply live
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "5" }
+
+  caddy:                                      # automatic HTTPS certificate for DOMAIN
+    image: caddy:2
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on: [gateway]
+    ports:
+      - "80:80"
+      - "443:443"
+    command: caddy reverse-proxy --from ${DOMAIN:-localhost} --to gateway:8080
+    volumes:
+      - caddy-data:/data
+
+volumes:
+  gateway-data:
+  caddy-data:
