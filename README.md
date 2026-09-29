@@ -5,6 +5,8 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](requirements.txt)
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](#2-connect-real-agents)
 
+![Demo: an AI agent's scam wire is blocked, a refund waits for approval and is approved from a phone](docs/demo.gif)
+
 **Brakes for your AI agents.** Every action an agent takes (running a command, editing a file, sending an
 email, issuing a refund, changing a database) goes through Squidbrake first. It is **checked** against your
 rules, **held for a person** when it's risky, **recorded** in a tamper-evident audit trail, and can be
