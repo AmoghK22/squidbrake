@@ -10,7 +10,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY server.py commands.py rules.yaml dashboard.html approve.html ./
+COPY server.py commands.py verify.py rules.yaml dashboard.html approve.html ./
 RUN useradd -r -u 10001 gateway && mkdir -p /app/data && chown -R gateway /app/data
 USER gateway
 

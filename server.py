@@ -59,6 +59,7 @@ from sqlalchemy import (
 )
 
 import commands
+import verify
 
 # --------------------------------------------------------------------------- config
 
@@ -378,7 +379,15 @@ audit_trail = Table(
     Column("prev_hash", String(64), nullable=False, unique=True),  # a fork can't be written silently
     Column("hash", String(64), nullable=False),
 )
-GENESIS = "0" * 64
+GENESIS = verify.GENESIS
+
+# Every version of rules.yaml that made a decision, so any decision can be traced to the exact rules behind it.
+policy_versions = Table(
+    "policy_versions", metadata,
+    Column("fingerprint", String(16), primary_key=True),
+    Column("first_seen", String(32), nullable=False),
+    Column("content", Text, nullable=False),
+)
 
 
 def migrate(eng) -> None:
@@ -419,9 +428,7 @@ def _sha(obj: Any) -> str | None:
     return None if obj is None else hashlib.sha256(str(obj).encode()).hexdigest()
 
 
-def _entry_hash(prev: str, at: str, actor: str | None, action: str, target: str | None, detail: str) -> str:
-    body = json.dumps([prev, at, actor, action, target, detail], separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(body.encode()).hexdigest()
+_entry_hash = verify.entry_hash   # one definition, shared with the offline checker
 
 
 def audit(conn, actor: str | None, action: str, target: str | None, **detail) -> None:
@@ -433,16 +440,18 @@ def audit(conn, actor: str | None, action: str, target: str | None, **detail) ->
 
 
 def verify_audit_chain() -> dict:
-    prev, n = GENESIS, 0
+    """The hash chain, plus: do the recorded actions still match the fingerprints taken when they happened?"""
     with engine.connect() as conn:
-        for r in conn.execute(select(audit_trail).order_by(audit_trail.c.seq)).all():
-            n += 1
-            if r.prev_hash != prev or r.hash != _entry_hash(prev, r.at, r.actor, r.action, r.target, r.detail):
-                return {"ok": False, "entries": n, "first_bad_seq": r.seq, "head_hash": None,
-                        "message": f"entry #{r.seq} was changed, removed or inserted after the fact"}
-            prev = r.hash
-    return {"ok": True, "entries": n, "first_bad_seq": None, "head_hash": prev,
-            "message": "every entry is intact and in its original order"}
+        entries = [dict(r._mapping) for r in conn.execute(select(audit_trail).order_by(audit_trail.c.seq)).all()]
+        rows = {r.id: {"id": r.id, "input": r.input, "output": r.output}
+                for r in conn.execute(select(events.c.id, events.c.input, events.c.output)).all()}
+    result = verify.check_chain(entries)
+    changed = verify.check_events(entries, rows)["changed"] if result["ok"] else []
+    if changed:
+        result.update(ok=False, head_hash=result["head_hash"], events_changed=changed,
+                      message=f"the chain is intact, but {len(changed)} recorded action(s) were edited in the database "
+                              f"afterwards (first: {changed[0]['event']}, {changed[0]['field']})")
+    return result
 
 
 def state_get(key: str, default: Any = None) -> Any:
@@ -611,6 +620,7 @@ class Policy:
         self.history: dict = dict(HISTORY_DEFAULTS)
         self.commands: dict = dict(COMMAND_DEFAULTS)
         self.sequences: list[dict] = []
+        self.source, self.fingerprint = "", verify.rules_fingerprint("")
         self.upstreams: dict[str, str] = {}
 
     def _maybe_reload(self) -> None:
@@ -621,7 +631,8 @@ class Policy:
             if sig == self._sig:
                 return
             try:
-                data = (yaml.safe_load(self.path.read_text(encoding="utf-8")) if sig else None) or {}
+                source = self.path.read_text(encoding="utf-8") if sig else ""
+                data = yaml.safe_load(source) or {}
                 rules = []
                 for i, r in enumerate(data.get("rules") or []):
                     m = r.get("match") or {}
@@ -661,6 +672,7 @@ class Policy:
                 sequences = self._compile_sequences(data.get("sequences"))
                 self.default, self.rules, self.history, self.commands = default, rules, hc, cc
                 self.sequences = sequences
+                self.source, self.fingerprint = source, verify.rules_fingerprint(source)
                 self.default_reason = data.get("default_reason") or f"default {default}"
                 self.upstreams = {k: str(v).rstrip("/") for k, v in (data.get("upstreams") or {}).items()}
                 log.info("loaded %d rules from %s (default=%s)", len(rules), self.path, default)
@@ -907,6 +919,19 @@ def command_signals(name: str, input: Any) -> tuple[list[dict], bool]:
 
 
 SEQUENCE_EFFECT = {"deny": "block", "review": "review", "warn": "warn"}
+_recorded_policies: set[str] = set()
+
+
+def record_policy_version(conn) -> None:
+    """Keep the text of each rules.yaml version that decides something (inside audited_tx, so no two race)."""
+    fp = policy.fingerprint
+    if fp in _recorded_policies:
+        return
+    if conn.execute(select(policy_versions.c.fingerprint).where(policy_versions.c.fingerprint == fp)).first() is None:
+        conn.execute(policy_versions.insert().values(fingerprint=fp, first_seen=utcnow(), content=policy.source))
+        audit(conn, "gateway", "policy.version", fp, sha256=hashlib.sha256(policy.source.encode()).hexdigest(),
+              rules=len(policy.rules), sequences=len(policy.sequences))
+    _recorded_policies.add(fp)
 
 
 def _step_phrase(row) -> str:
@@ -1038,8 +1063,9 @@ def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
         "signals": json.dumps(signals) if signals else None,
     }
     with audited_tx() as conn:
+        record_policy_version(conn)
         conn.execute(events.insert().values(**row))
-        audit(conn, client, "event.created", row["id"], name=ev.name, kind=ev.kind, source=ev.source,
+        audit(conn, client, "event.created", row["id"], rules=policy.fingerprint, name=ev.name, kind=ev.kind, source=ev.source,
               session_id=ev.session_id, status=status, decision=decision, rule_id=rule_id, reason=reason,
               input_sha256=_sha(row["input"]), output_sha256=_sha(row["output"]),
               signals=[f"{x['check']}:{x['effect']}" for x in signals] or None)
@@ -1748,6 +1774,24 @@ def audit_verify(_: str = Depends(person)):
     return verify_audit_chain()
 
 
+@app.get("/v1/audit/export.json")
+def audit_evidence(who: str = Depends(person)):
+    """Everything needed to check the history offline: python verify.py <file> (see verify.py)."""
+    with audited_tx() as conn:
+        audit(conn, who, "audit.exported", None, format="evidence")
+    with engine.connect() as conn:
+        entries = [dict(r._mapping) for r in conn.execute(select(audit_trail).order_by(audit_trail.c.seq)).all()]
+        evs = [dict(r._mapping) for r in conn.execute(select(*[events.c[c] for c in EXPORT_COLUMNS])
+                                                      .order_by(events.c.created_at)).all()]
+        policies = {r.fingerprint: r.content for r in conn.execute(select(policy_versions)).all()}
+    body = {"format": verify.FORMAT, "generated_at": utcnow(), "generated_by": who,
+            "head_hash": entries[-1]["hash"] if entries else GENESIS, "entries": entries, "events": evs,
+            "policies": policies,
+            "how_to_check": "python verify.py this-file.json   (verify.py is in the Squidbrake repository)"}
+    return Response(json.dumps(body, ensure_ascii=False, indent=1), media_type="application/json", headers={
+        "Content-Disposition": f'attachment; filename="squidbrake-evidence-{datetime.now():%Y%m%d-%H%M}.json"'})
+
+
 @app.get("/v1/audit/log")
 def audit_entries(limit: int = Query(100, ge=1, le=1000), _: str = Depends(person)):
     with engine.connect() as conn:
@@ -2073,12 +2117,14 @@ def main(argv: list[str] | None = None) -> int:
     rm = sub.add_parser("remove-key", help="revoke a key")
     rm.add_argument("name")
     sub.add_parser("keys", help="list keys")
+    v = sub.add_parser("verify", help="check an evidence file offline (same as: python verify.py FILE)")
+    v.add_argument("file")
     argv = sys.argv[1:] if argv is None else argv
     if not argv or (argv[0].startswith("-") and argv[0] not in ("-h", "--help")):
         argv = ["run", *argv]  # `python server.py --port 9000` means run
     args = p.parse_args(argv)
-    return {"run": _cli_run, "init": _cli_init, "add-key": _cli_add_key,
-            "remove-key": _cli_remove_key, "keys": _cli_keys}[args.cmd](args)
+    return {"run": _cli_run, "init": _cli_init, "add-key": _cli_add_key, "remove-key": _cli_remove_key,
+            "keys": _cli_keys, "verify": lambda a: verify.main([a.file])}[args.cmd](args)
 
 
 if __name__ == "__main__":

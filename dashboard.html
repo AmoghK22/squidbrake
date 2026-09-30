@@ -1402,6 +1402,17 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
     } catch (err) { toast(err.message); }
   }
 
+  async function downloadEvidence() {
+    try {
+      const res = await fetch("/v1/audit/export.json", { headers: { "X-Gateway-Key": apiKey } });
+      if (!res.ok) throw new Error(`export failed (${res.status})`);
+      const name = (res.headers.get("content-disposition") || "").match(/filename="([^"]+)"/)?.[1] || "squidbrake-evidence.json";
+      const url = URL.createObjectURL(await res.blob());
+      el("a", { href: url, download: name }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err) { toast(err.message); }
+  }
+
   // ---------- team
   async function loadTeam() {
     const data = await api("/v1/team");
@@ -1481,10 +1492,13 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
     $("#auditCard").replaceChildren(el("div", { class: "card-head" }, el("h2", { text: "Tamper check" }),
         el("button", { class: "linkish", text: "Re-check now", onclick: loadReports })),
       el("div", { class: "audit-ok " + (au.ok ? "ok" : "bad") }, el("div", { class: "big", text: au.ok ? "✓" : "!" }),
-        el("div", {}, el("b", { text: au.ok ? "Audit trail intact" : `Audit trail broken at entry #${au.first_bad_seq}` }),
+        el("div", {}, el("b", { text: au.ok ? "Audit trail intact" : au.events_changed ? "Recorded actions were edited afterwards"
+          : `Audit trail broken at entry #${au.first_bad_seq}` }),
           el("div", { class: "sec", text: `${nf.format(au.entries)} entries. ${au.message}.` }),
           el("div", { class: "muted", style: "margin-top:6px;font-size:12.5px", text: "Each entry is chained to the one before by a fingerprint, so any edit or deletion shows up here. Keep this fingerprint to prove later that today's history hasn't changed:" }),
-          el("div", { class: "fp", text: au.head_hash || "—" }))));
+          el("div", { class: "fp", text: au.head_hash || "—" }),
+          el("div", { style: "margin-top:10px" }, el("button", { class: "btn", text: "⬇ Download evidence", onclick: downloadEvidence }),
+            el("span", { class: "muted", style: "margin-left:8px;font-size:12.5px", text: "Anyone can check it offline: python verify.py <file>" })))));
     const stoppedAgents = controlsState.agents || {};
     cells("#repAgents", r.agents.map((g) => el("tr", {},
       el("td", {}, el("b", { text: g.agent }), stoppedAgents[g.agent] ? el("span", { class: "tag", style: "border-color:var(--critical);color:var(--critical)", text: "stopped" }) : null),

@@ -534,6 +534,51 @@ def test_audit_chain_detects_tampering(c, org):
     assert c.get("/v1/audit/verify", headers=org["viewer"]).json()["ok"]
 
 
+def test_edited_actions_are_detected(c, org):
+    eid = c.post("/v1/events", headers=org["agent"], json={"name": "notes.add", "input": {"text": "original"}}).json()["event_id"]
+    from sqlalchemy import text as sql
+    with server.engine.begin() as conn:  # the chain is untouched; the action itself is quietly rewritten
+        original = conn.execute(sql("SELECT input FROM events WHERE id=:i"), {"i": eid}).scalar()
+        conn.execute(sql("UPDATE events SET input=:v WHERE id=:i"), {"v": '{"text": "rewritten"}', "i": eid})
+    v = c.get("/v1/audit/verify", headers=org["viewer"]).json()
+    assert not v["ok"] and v["events_changed"] == [{"event": eid, "field": "input"}]
+    with server.engine.begin() as conn:
+        conn.execute(sql("UPDATE events SET input=:v WHERE id=:i"), {"v": original, "i": eid})
+    assert c.get("/v1/audit/verify", headers=org["viewer"]).json()["ok"]
+
+
+def test_evidence_export_checks_offline(c, org, tmp_path):
+    import copy
+    import verify
+    c.post("/v1/events", headers=org["agent"], json={"name": "shell.exec", "input": {"cmd": "ls"}})
+    r = c.get("/v1/audit/export.json", headers=org["viewer"])
+    assert r.status_code == 200 and "squidbrake-evidence-" in r.headers["content-disposition"]
+    data = r.json()
+    result = verify.verify(data)
+    assert result["ok"], result
+    assert result["events"]["checked"] > 0 and server.policy.fingerprint in data["policies"]
+    assert server.policy.fingerprint in result["rules"]["versions"]
+    assert c.post("/v1/audit/export.json", headers=org["agent"]).status_code in (403, 405)
+
+    bad = copy.deepcopy(data)                        # an action's result rewritten in the file
+    victim = next(e for e in bad["events"] if e["output"] is None and e["input"])
+    victim["input"] = victim["input"][:-1] + ', "tampered": true}'
+    assert not verify.verify(bad)["ok"] and verify.verify(bad)["events"]["changed"]
+    bad = copy.deepcopy(data)                        # an audit entry deleted
+    del bad["entries"][len(bad["entries"]) // 2]
+    assert not verify.verify(bad)["chain"]["ok"]
+    bad = copy.deepcopy(data)                        # the rules behind the decisions swapped
+    fp = next(iter(bad["policies"]))
+    bad["policies"][fp] = "default: allow\n"
+    assert verify.verify(bad)["rules"]["mismatched"] == [fp]
+
+    f = tmp_path / "evidence.json"
+    f.write_text(json.dumps(data), encoding="utf-8")
+    assert verify.main([str(f)]) == 0
+    f.write_text(json.dumps(bad), encoding="utf-8")
+    assert verify.main([str(f)]) == 1
+
+
 def test_reports_and_export(c, org):
     eid = c.post("/v1/events", headers=org["agent"], json={"name": "payments.refund", "source": "support-bot"}).json()["event_id"]
     c.post(f"/v1/events/{eid}/approve", headers=org["finance-lead"])

@@ -28,7 +28,7 @@ Free and open source (Apache 2.0). Runs on your laptop or your own server; your 
   (Stripe, GitHub, Slack, databases, internal tools) can be wrapped for Antigravity, Cursor, Claude Desktop and others.
 - **For teams:** a key per person and per agent, roles (only `finance` approves wires), an emergency stop (all agents,
   one agent, or one conversation, which also ends Claude Code's turn),
-  reports, CSV export and an audit trail you can verify.
+  reports, CSV export, and evidence anyone can verify offline (`python verify.py`).
 - **Fails closed:** if Squidbrake is down, guarded tools don't run.
 
 See [SHOWCASE.md](SHOWCASE.md) for a 5-minute demo with a sandbox company.
@@ -270,6 +270,20 @@ An agent cannot bypass Squidbrake through tools that are connected to the gatewa
 | `GET /v1/stats?hours=24&bucket=hour` | counts by status, top tool names, timeline (same filters as events) |
 | `POST /v1/policy/check` | dry-run a call against the rules (not recorded) |
 | `GET /docs` | interactive OpenAPI docs |
+
+## Evidence anyone can check
+
+Every decision is written to a hash-chained audit trail together with the fingerprint of the `rules.yaml` version
+that made it, and each version's text is kept. **Reports > Tamper check > Download evidence** (or
+`GET /v1/audit/export.json`) gives one file that anyone can check on their own machine, without trusting the server:
+
+```bash
+python verify.py squidbrake-evidence-20261001-0930.json
+```
+
+It confirms the chain is unbroken, that every recorded action still matches the fingerprint taken when it happened
+(so rows edited in the database are caught, not just edits to the log), and that every decision's rules version is
+in the file. `verify.py` needs only the Python standard library. The dashboard's tamper check runs the same checks live.
 
 ## Behaviour notes
 
