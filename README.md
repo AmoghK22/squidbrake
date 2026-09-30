@@ -33,7 +33,9 @@ Free and open source (Apache 2.0). Runs on your laptop or your own server; your 
   reports, CSV export, and evidence anyone can verify offline (`python verify.py`).
 - **Fails closed:** if Squidbrake is down, guarded tools don't run.
 
-See [SHOWCASE.md](SHOWCASE.md) for a 5-minute demo with a sandbox company.
+See [SHOWCASE.md](SHOWCASE.md) for a 5-minute demo with a sandbox company, and [incidents/](incidents/) for **8 real
+AI-agent incidents replayed against the shipped rules** (Replit, the Railway volume deletion, GitHub MCP, Supabase
+MCP, Claude Code and Antigravity deletes...): 11 of 11 harmful actions stopped, checked in CI.
 
 ![Squidbrake dashboard: a git push and a refund wait for approval, while a scam wire transfer was blocked](docs/dashboard.png)
 

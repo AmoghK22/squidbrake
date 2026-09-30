@@ -1055,7 +1055,7 @@ def taint_signals(conn, ev: "EventIn", client: str) -> list[dict]:
     if shell:
         if not taint.sends_out(line):
             return []
-    elif not _globbed(ev.name, tc["sinks"]) or _globbed(ev.name, tc["untrusted"]):
+    elif not _globbed(ev.name, tc["sinks"]):     # e.g. github.create_pull_request: a sink, even though "*pull_request*" reads
         return []
     since = (datetime.now(timezone.utc) - timedelta(hours=float(tc["lookback_hours"]))).isoformat().replace("+00:00", "Z")
     scope = events.c.session_id == ev.session_id if ev.session_id else and_(events.c.source == ev.source,

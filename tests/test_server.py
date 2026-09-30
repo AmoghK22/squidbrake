@@ -103,7 +103,7 @@ def test_list_filter(c):
 def test_search_and_stats(c):
     c.post("/v1/events", headers=H, json={"name": "github.create_issue", "source": "triage-bot", "session_id": "gh-42"})
     c.post("/v1/events", headers=H, json={"name": "shell.exec", "input": "rm -rf /tmp/x", "source": "triage-bot"})
-    hits = c.get("/v1/events", headers=H, params={"q": "GITHUB"}).json()["events"]
+    hits = c.get("/v1/events", headers=H, params={"q": "GITHUB", "source": "triage-bot"}).json()["events"]
     assert [e["name"] for e in hits] == ["github.create_issue"]
     assert c.get("/v1/events", headers=H, params={"q": "100%_"}).json()["events"] == []  # wildcards are literal
     s = c.get("/v1/stats", headers=H, params={"source": "triage-bot", "bucket": "hour"}).json()

@@ -184,6 +184,9 @@ DESTRUCTIVE_WORDS = re.compile(r"^(delete|destroy|terminate|remove|rm|rb|purge|d
                                r"uninstall|disable-backup|delete-.*|.*-delete|remove-.*|terminate-.*)$", re.I)
 SQL_DESTRUCTIVE = re.compile(r"\b(drop\s+(table|database|schema|index)|truncate\b|delete\s+from\s+\w+\s*(;|$)|"
                              r"dropdatabase\s*\(|\.drop\s*\(|flushall|flushdb)", re.I)
+HTTP_CLIS = {"curl", "wget", "http", "https", "xh", "httpie", "invoke-webrequest", "iwr", "invoke-restmethod", "irm"}
+API_DELETE = re.compile(r"\bmutation\b[^{]*\{\s*\w*(delete|destroy|remove|drop|purge|wipe)\w*\s*\(|"
+                        r"\"(action|op|operation)\"\s*:\s*\"(delete|destroy|remove|drop)\w*\"", re.I)
 SQL_CLIS = {"psql", "mysql", "mariadb", "sqlite3", "mongosh", "mongo", "redis-cli", "sqlcmd", "clickhouse-client",
             "cockroach", "duckdb"}
 
@@ -340,6 +343,15 @@ def classify(words: list[str], raw: str = "", depth: int = 0) -> tuple[list[Comm
                 or (sub[:1] == ["compose"] and "down" in lower and ("-v" in lower or "--volumes" in lower)) \
                 or (sub[:1] == ["rm"] and ("-v" in lower or "--volumes" in lower)):
             cmd.kind, cmd.why = "irreversible", f"deletes containers' data ({' '.join(words[:4])})"
+        return [cmd], []
+
+    # ---- API calls that delete (curl -X DELETE, GraphQL mutations like volumeDelete / deleteRepository)
+    if prog in HTTP_CLIS:
+        text = " ".join(words[1:])
+        method = next((words[i + 1].upper() for i, w in enumerate(words[:-1]) if w in ("-X", "--request", "-Method")), "")
+        method = method or next((w[2:].upper() for w in words[1:] if re.match(r"^-X[A-Za-z]+$", w)), "")
+        if method == "DELETE" or API_DELETE.search(text):
+            cmd.kind, cmd.why = "irreversible", f"sends an API request that deletes something ({' '.join(words[:3])[:80]})"
         return [cmd], []
 
     # ---- databases
