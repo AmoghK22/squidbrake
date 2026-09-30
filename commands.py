@@ -187,6 +187,13 @@ SQL_DESTRUCTIVE = re.compile(r"\b(drop\s+(table|database|schema|index)|truncate\
 SQL_CLIS = {"psql", "mysql", "mariadb", "sqlite3", "mongosh", "mongo", "redis-cli", "sqlcmd", "clickhouse-client",
             "cockroach", "duckdb"}
 
+# Paths that hold secrets: reading them is never "only looking" (it's how keys get stolen and sent out).
+SECRET_PATH = re.compile(r"(^|[\\/~.])(\.env(\.[\w-]+)?|\.ssh|id_rsa|id_ed25519|id_ecdsa|\.pem|\.p12|\.pfx|\.key|"
+                         r"\.aws|\.azure|\.gcloud|\.config[\\/]gcloud|\.kube|\.docker[\\/]config\.json|\.netrc|"
+                         r"\.npmrc|\.pypirc|\.git-credentials|credentials|secrets?|\.vault-token|token|shadow|"
+                         r"keychain|\.gnupg|wallet)([\\/.\s]|$)", re.I)
+SECRET_EXT = re.compile(r"\.(pem|p12|pfx|key|keystore|jks|kdbx|ppk)$", re.I)
+
 _ROOTS = re.compile(r"^(/+\*?|/\.\*?|~/?\*?|\$\{?home\}?/?\*?|\$env:userprofile\\?\*?|%userprofile%\\?|"
                     r"[a-z]:[\\/]?\*?|[a-z]:[\\/]\.\*?|\\\\?\*?)$", re.I)
 _SYSTEM_DIRS = re.compile(r"^(/(bin|boot|dev|etc|lib|lib64|opt|proc|root|sbin|srv|sys|usr|var|home|users|"
@@ -362,7 +369,9 @@ def classify(words: list[str], raw: str = "", depth: int = 0) -> tuple[list[Comm
     # ---- only looks
     if prog in READ_ONLY:
         bad = UNSAFE_OPTIONS.get(prog, ())
-        if not any(w == b or w.startswith(b + "=") for w in words[1:] for b in bad):
+        if any(SECRET_PATH.search(w) or SECRET_EXT.search(w) for w in words[1:] if not w.startswith("-")):
+            cmd.why = f"reads a file that may hold secrets ({' '.join(words[:4])})"   # "other": a person decides
+        elif not any(w == b or w.startswith(b + "=") for w in words[1:] for b in bad):
             cmd.kind = "read_only"
     return [cmd], []
 

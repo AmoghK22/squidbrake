@@ -761,6 +761,11 @@ def test_history_duplicate_and_repeat_of_rejected(c, org, history_on):
     assert second["decision"] == "review" and second["signals"][0]["check"] == "duplicate_change"  # flagged for the approver
     rj = c.post(f"/v1/events/{second['event_id']}/reject", headers=org["admin"], json={"note": "already refunded once"})
     assert rj.status_code == 200, rj.json()
+    other_bot = c.post("/v1/events", headers=org["agent"], json={"name": "payments.refund", "source": "another-bot",
+                                                                  "input": {"charge_id": charge, "amount": 20}}).json()
+    assert not any(x["check"] == "repeat_of_rejected" for x in other_bot["signals"] or [])   # a no is for that agent
+    if other_bot["decision"] == "review":
+        c.post(f"/v1/events/{other_bot['event_id']}/reject", headers=org["admin"])
     third = c.post("/v1/events", headers=org["agent"], json={"name": "payments.refund", "input": {"charge_id": charge, "amount": 20}}).json()
     assert third["decision"] == "deny" and third["rule_id"] == "history:repeat_of_rejected"
     assert "already refunded once" in third["reason"]

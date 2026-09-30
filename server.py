@@ -55,7 +55,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import (
     Column, Float, Integer, MetaData, String, Table, Text, case, create_engine, delete, event as sa_event,
-    and_, func, inspect as sa_inspect, or_, select, text, update,
+    and_, func, inspect as sa_inspect, or_, select, text, true, update,
 )
 
 import commands
@@ -882,7 +882,8 @@ def _message_behind(prior: list, input: Any) -> tuple[str, str] | None:
 
 
 def history_signals(conn, name: str, input: Any, stored_input: str | None, source: str | None,
-                    session_id: str | None, is_change: bool) -> list[dict]:
+                    session_id: str | None, is_change: bool, client: str | None = None,
+                    only_reads: bool = False) -> list[dict]:
     """Look at what happened before this action (see HISTORY_DEFAULTS)."""
     hc = policy.history
     if all(hc[k] == "off" for k in HISTORY_EFFECT_KEYS):
@@ -893,11 +894,13 @@ def history_signals(conn, name: str, input: Any, stored_input: str | None, sourc
     add = lambda check, message, ref=None: hc[check] != "off" and out.append(
         {"check": check, "effect": hc[check], "message": message, "ref": ref})
 
-    # 1. A person already said no to this.
-    if hc["repeat_of_rejected"] != "off":
+    # 1. A person already said no to this - to this agent. (Looking again, e.g. `git status`, is not a retry.)
+    if hc["repeat_of_rejected"] != "off" and not only_reads:
+        same_agent = and_(events.c.source == source if source else events.c.source.is_(None),
+                          events.c.client == client if client else true())
         rejected = conn.execute(select(events).where(
             events.c.name == name, events.c.decision == "deny", events.c.decided_by.isnot(None),
-            events.c.decided_by != "timeout", events.c.created_at >= since,
+            events.c.decided_by != "timeout", events.c.created_at >= since, same_agent,
         ).order_by(events.c.created_at.desc()).limit(50)).all()
         for r in rejected:
             prev_target = _target(json.loads(r.input)) if r.input else None
@@ -1114,7 +1117,8 @@ def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
                 signals = sequence_signals(conn, ev, client)
                 # A command that only looks isn't a change: running `git status` twice is not a duplicate.
                 signals += history_signals(conn, ev.name, ev.input, to_stored_json(ev.input), ev.source,
-                                           ev.session_id, is_change=decision == "review" and not only_reads)
+                                           ev.session_id, is_change=decision == "review" and not only_reads,
+                                           client=client, only_reads=only_reads)
                 signals += taint_signals(conn, ev, client) + command_found
             blocking = next((s for s in signals if s["effect"] == "block"), None)
             needs_person = next((s for s in signals if s["effect"] == "review"), None)

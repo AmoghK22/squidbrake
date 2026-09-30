@@ -105,3 +105,18 @@ def test_command_of():
     assert commands.command_of({"command": "rm", "args": ["-rf", "/"]}) == "rm -rf /"
     assert commands.command_of({"command": ["rm", "-rf", "/"]}) == "rm -rf /"
     assert commands.command_of({"path": "x"}) is None
+
+
+@pytest.mark.parametrize("line", [
+    "cat .env", "cat .env.production", "cat ~/.aws/credentials", "cat ~/.ssh/id_rsa", "ls ~/.ssh", "cat server.pem",
+    "grep -r password .env", "head config/token.json", "cat secrets.yaml", "cat ~/.netrc",
+    r"type C:\Users\me\.env.local",
+])
+def test_reading_secrets_is_never_just_looking(line):
+    r = commands.read(line)
+    assert r.kind != "read_only" and "secrets" in r.summary()
+
+
+@pytest.mark.parametrize("line", ["cat README.md", "cat src/tokenizer.py", "cat docs/environment.md", "ls src"])
+def test_ordinary_reads_stay_read_only(line):
+    assert commands.read(line).kind == "read_only"
