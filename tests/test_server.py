@@ -238,6 +238,60 @@ def test_command_checks(c, monkeypatch):
         c.post(f"/v1/events/{eid}/reject", headers=BOSS)
 
 
+def test_sequence_rules(c, monkeypatch, tmp_path):
+    rules = tmp_path / "seq.yaml"
+    rules.write_text("""
+default: allow
+history_checks: { repeat_of_rejected: off, impersonation: off, payment_request_in_message: off, duplicate_change: off }
+sequences:
+  - id: backup-then-delete
+    action: deny
+    reason: Deleting right after backups were turned off
+    match: { name: "*delete_snapshot*" }
+    after:
+      match: { input_regex: 'backup_retention\\W{0,4}0\\b' }
+  - id: same-charge
+    action: review
+    reason: Second refund on the same charge
+    match: { name: "pay.refund" }
+    after: { match: { name: "pay.refund" }, same_target: true }
+  - id: loop
+    action: deny
+    reason: Too many in a row
+    match: { name: "loop.*" }
+    count: { more_than: 3, within_hours: 1, scope: agent }
+""")
+    monkeypatch.setattr(server, "policy", server.Policy(rules))
+    s = f"seq-{time.time_ns()}"
+
+    def post(name, input, session=s, source="ops-bot"):
+        return c.post("/v1/events", headers=H, json={"name": name, "input": input, "session_id": session,
+                                                      "source": source}).json()
+
+    assert post("rds.delete_snapshot", {"id": "db1"})["decision"] == "allow"      # nothing before it
+    post("rds.modify", {"backup_retention": 0, "id": "db1"})
+    d = post("rds.delete_snapshot", {"id": "db1"})
+    assert d["decision"] == "deny" and d["rule_id"] == "sequence:backup-then-delete"
+    assert "Because earlier: rds.modify" in d["reason"] and d["signals"][0]["ref"]
+    assert post("rds.delete_snapshot", {"id": "db1"}, session="another-conversation")["decision"] == "allow"
+
+    assert post("pay.refund", {"charge_id": "ch_1"})["decision"] == "allow"
+    assert post("pay.refund", {"charge_id": "ch_2"})["decision"] == "allow"       # a different charge
+    d = post("pay.refund", {"charge_id": "ch_1"})
+    assert d["decision"] == "review" and d["rule_id"] == "sequence:same-charge" and "on ch_1" in d["reason"]
+    c.post(f"/v1/events/{d['event_id']}/reject", headers=BOSS)
+
+    for i in range(3):
+        assert post("loop.step", {"i": i}, source="loop-bot")["decision"] == "allow"
+    d = post("loop.step", {"i": 3}, source="loop-bot")
+    assert d["decision"] == "deny" and "3 like it ran by this agent" in d["reason"]
+    assert post("loop.step", {"i": 0}, source="calm-bot")["decision"] == "allow"   # counted per agent
+
+    rules.write_text("sequences: [{id: x, action: deny, match: {name: a}}]")     # no after/count: rejected
+    os.utime(rules, (time.time(), time.time() + 5))
+    assert post("loop.step", {"i": 4}, source="loop-bot")["decision"] == "deny"    # previous rules kept
+
+
 def test_record_only_skips_review(c):
     d = c.post("/v1/events", headers=H, json={"name": "payments.refund", "output": "done"}).json()
     assert d["decision"] == "allow" and d["status"] == "completed"
@@ -489,7 +543,7 @@ def test_reports_and_export(c, org):
     assert bot["held"] >= 1 and bot["approved"] >= 1 and bot["denied"] >= 1
     assert any(a["approver"] == "finance-lead" for a in r["approvals"]["by_approver"])
     assert any(b["rule_id"] == "no-rm" for b in r["blocked_by_rule"])
-    assert r["audit"]["ok"] and "support-bot" in server.digest_text(r)
+    assert r["audit"]["ok"] and r["agents"][0]["agent"] in server.digest_text(r)  # most active agents are listed
     csv_text = c.get("/v1/audit/export.csv", headers=org["viewer"]).text
     assert "VERIFIED" in csv_text.splitlines()[0] and "support-bot" in csv_text
 

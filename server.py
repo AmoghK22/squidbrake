@@ -554,6 +554,53 @@ class Policy:
             return None
         return n if n == n else None  # NaN never matches
 
+    @classmethod
+    def _compile_match(cls, m: dict) -> dict:
+        return {
+            "globs": {f: ([m[f]] if isinstance(m[f], str) else list(m[f])) for f in cls.MATCH_FIELDS if f in m},
+            "input_regex": re.compile(m["input_regex"], re.I | re.S) if m.get("input_regex") else None,
+            "input_conds": cls._input_conds(m.get("input")),
+        }
+
+    @classmethod
+    def matches(cls, compiled: dict, values: dict, input: Any, input_text: str | None = None) -> bool:
+        if not all(any(fnmatch.fnmatchcase((values.get(f) or "").lower(), p.lower()) for p in pats)
+                   for f, pats in compiled["globs"].items()):
+            return False
+        if compiled["input_regex"] is not None:
+            if input_text is None:
+                input_text = input if isinstance(input, str) else json.dumps(input, default=str, ensure_ascii=False)
+            if not compiled["input_regex"].search(input_text):
+                return False
+        # A missing or non-numeric field never matches, so the call falls through to later rules.
+        return all((n := cls._input_number(input, f)) is not None and op(n, v) for f, op, v in compiled["input_conds"])
+
+    @classmethod
+    def _compile_sequences(cls, items: list) -> list[dict]:
+        out = []
+        for i, r in enumerate(items or []):
+            rid = r.get("id") or f"sequence-{i}"
+            action = r.get("action", "review")
+            if action not in ("deny", "review", "warn"):
+                raise ValueError(f"sequences.{rid}: action must be deny, review or warn")
+            after, count = r.get("after"), r.get("count")
+            if not after and not count:
+                raise ValueError(f"sequences.{rid}: needs `after:` or `count:`")
+            seq = {"id": rid, "action": action, "reason": r.get("reason") or rid,
+                   "match": cls._compile_match(r.get("match") or {}), "after": None, "count": None}
+            if after:
+                seq["after"] = {"match": cls._compile_match(after.get("match") or {}),
+                                "within_hours": float(after.get("within_hours", 24)),
+                                "same_target": bool(after.get("same_target", False))}
+            if count:
+                scope = count.get("scope", "agent")
+                if scope not in ("session", "agent", "all") or "more_than" not in count:
+                    raise ValueError(f"sequences.{rid}: count needs more_than, and scope session | agent | all")
+                seq["count"] = {"more_than": int(count["more_than"]), "within_hours": float(count.get("within_hours", 1)),
+                                "scope": scope}
+            out.append(seq)
+        return out
+
     def __init__(self, path: Path):
         self.path = path
         self._sig: tuple | None = ()  # never equal to a real signature or None
@@ -563,6 +610,7 @@ class Policy:
         self.rules: list[dict] = []
         self.history: dict = dict(HISTORY_DEFAULTS)
         self.commands: dict = dict(COMMAND_DEFAULTS)
+        self.sequences: list[dict] = []
         self.upstreams: dict[str, str] = {}
 
     def _maybe_reload(self) -> None:
@@ -582,9 +630,7 @@ class Policy:
                         "id": r.get("id") or f"rule-{i}",
                         "action": r.get("action", "deny"),
                         "reason": r.get("reason", ""),
-                        "globs": {f: ([m[f]] if isinstance(m[f], str) else list(m[f])) for f in self.MATCH_FIELDS if f in m},
-                        "input_regex": re.compile(m["input_regex"], re.I | re.S) if m.get("input_regex") else None,
-                        "input_conds": self._input_conds(m.get("input")),
+                        **self._compile_match(m),
                         # review-only options
                         "timeout_seconds": int(r.get("timeout_seconds", APPROVAL_TIMEOUT)),
                         "on_timeout": r.get("on_timeout", "deny"),
@@ -612,7 +658,9 @@ class Policy:
                 if cc["read_only"] not in ("allow", "off"):
                     raise ValueError("command_checks.read_only must be allow or off")
                 cc["tools"] = [cc["tools"]] if isinstance(cc["tools"], str) else list(cc["tools"] or [])
+                sequences = self._compile_sequences(data.get("sequences"))
                 self.default, self.rules, self.history, self.commands = default, rules, hc, cc
+                self.sequences = sequences
                 self.default_reason = data.get("default_reason") or f"default {default}"
                 self.upstreams = {k: str(v).rstrip("/") for k, v in (data.get("upstreams") or {}).items()}
                 log.info("loaded %d rules from %s (default=%s)", len(rules), self.path, default)
@@ -628,22 +676,10 @@ class Policy:
         """-> (action, reason, rule_id, rule). `rule` carries the review options."""
         self._maybe_reload()
         values = {"kind": kind, "name": name, "source": source, "client": client, "session_id": session_id}
-        input_text: str | None = None
+        input_text = input if isinstance(input, str) else json.dumps(input, default=str, ensure_ascii=False)
         for rule in self.rules:
-            if not all(
-                any(fnmatch.fnmatchcase((values[f] or "").lower(), p.lower()) for p in pats)
-                for f, pats in rule["globs"].items()
-            ):
-                continue
-            if rule["input_regex"] is not None:
-                if input_text is None:
-                    input_text = input if isinstance(input, str) else json.dumps(input, default=str, ensure_ascii=False)
-                if not rule["input_regex"].search(input_text):
-                    continue
-            # A missing or non-numeric field never matches, so the call falls through to later rules.
-            if not all((n := self._input_number(input, f)) is not None and op(n, v) for f, op, v in rule["input_conds"]):
-                continue
-            return rule["action"], rule["reason"] or f"matched rule {rule['id']}", rule["id"], rule
+            if self.matches(rule, values, input, input_text):
+                return rule["action"], rule["reason"] or f"matched rule {rule['id']}", rule["id"], rule
         return self.default, self.default_reason, None, self.DEFAULT_RULE
 
 
@@ -870,6 +906,71 @@ def command_signals(name: str, input: Any) -> tuple[list[dict], bool]:
     return [], kind == "read_only"
 
 
+SEQUENCE_EFFECT = {"deny": "block", "review": "review", "warn": "warn"}
+
+
+def _step_phrase(row) -> str:
+    """How an earlier step reads in a reason: Bash `aws rds modify-db-instance ...` (12 minutes ago)."""
+    stored = json.loads(row.input) if row.input else None
+    line = commands.command_of(stored) if stored is not None else None
+    target = _target(stored) if stored is not None else None
+    detail = f" `{line[:90]}`" if line else f" on {target[1]}" if target else ""
+    return f"{row.name}{detail} ({_ago(row.created_at)})"
+
+
+def sequence_signals(conn, ev: "EventIn", client: str) -> list[dict]:
+    """rules.yaml `sequences:` - this action, judged by what came before it (see rules.yaml)."""
+    seqs = policy.sequences
+    if not seqs:
+        return []
+    values = {"kind": ev.kind, "name": ev.name, "source": ev.source, "client": client, "session_id": ev.session_id}
+    input_text = ev.input if isinstance(ev.input, str) else json.dumps(ev.input, default=str, ensure_ascii=False)
+    out: list[dict] = []
+    now = datetime.now(timezone.utc)
+    for seq in seqs:
+        if not Policy.matches(seq["match"], values, ev.input, input_text):
+            continue
+        earlier = lambda hours, scope: conn.execute(select(events).where(
+            scope, events.c.created_at >= (now - timedelta(hours=hours)).isoformat().replace("+00:00", "Z"))
+            .order_by(events.c.created_at.desc()).limit(500)).all()
+        row_values = lambda r: {"kind": r.kind, "name": r.name, "source": r.source, "client": r.client,
+                                "session_id": r.session_id}
+        stored = lambda r: json.loads(r.input) if r.input else None
+        message = None
+        if seq["after"]:
+            a = seq["after"]
+            scope = events.c.session_id == ev.session_id if ev.session_id else and_(events.c.source == ev.source,
+                                                                                    events.c.client == client)
+            target = _target(ev.input)
+            for r in earlier(a["within_hours"], scope):
+                if r.status not in ("completed", "pending"):      # only steps that actually went ahead
+                    continue
+                if not Policy.matches(a["match"], row_values(r), stored(r), r.input or ""):
+                    continue
+                prev = _target(stored(r))
+                if a["same_target"] and not (target and prev and prev[1].lower() == target[1].lower()):
+                    continue
+                message, ref = f"{seq['reason']}. Because earlier: {_step_phrase(r)}.", r.id
+                break
+        if seq["count"] and message is None:
+            c = seq["count"]
+            scope = {"session": events.c.session_id == ev.session_id if ev.session_id else events.c.source == ev.source,
+                     "agent": and_(events.c.source == ev.source, events.c.client == client),
+                     "all": events.c.id.isnot(None)}[c["scope"]]
+            hits = [r for r in earlier(c["within_hours"], scope)
+                    if r.status != "denied" and Policy.matches(seq["match"], row_values(r), stored(r), r.input or "")]
+            if len(hits) >= c["more_than"]:
+                span = f"{c['within_hours']:g} hour{'s' if c['within_hours'] != 1 else ''}"
+                who = {"session": "in this conversation", "agent": "by this agent", "all": "across all agents"}[c["scope"]]
+                message = (f"{seq['reason']}. Because {len(hits)} like it ran {who} in the last {span} "
+                           f"(limit {c['more_than']}); the latest: {_step_phrase(hits[0])}.")
+                ref = hits[0].id
+        if message:
+            out.append({"check": "sequence", "rule": seq["id"], "effect": SEQUENCE_EFFECT[seq["action"]],
+                        "message": message, "ref": ref})
+    return out
+
+
 def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
     signals: list[dict] = []
     if stop := stopped_for(ev.source, client, ev.session_id):
@@ -882,18 +983,23 @@ def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
             kind=ev.kind, name=ev.name, source=ev.source, client=client, session_id=ev.session_id, input=ev.input
         )
         if decision != "deny":
-            signals, only_reads = command_signals(ev.name, ev.input)
+            command_found, only_reads = command_signals(ev.name, ev.input)
             with engine.connect() as conn:
+                # Most telling first: a sequence names the earlier step that caused it.
+                signals = sequence_signals(conn, ev, client) + command_found
                 signals += history_signals(conn, ev.name, ev.input, to_stored_json(ev.input), ev.source,
                                            ev.session_id, is_change=decision == "review")
             blocking = next((s for s in signals if s["effect"] == "block"), None)
             needs_person = next((s for s in signals if s["effect"] == "review"), None)
-            prefix = lambda s: "command" if s["check"].endswith("_command") else "history"
+            signal_id = lambda s: f"sequence:{s['rule']}" if s["check"] == "sequence" else \
+                f"command:{s['check']}" if s["check"].endswith("_command") else f"history:{s['check']}"
             if blocking and ev.output is None and ev.error is None:
-                decision, reason, rule_id = "deny", blocking["message"], f"{prefix(blocking)}:{blocking['check']}"
+                decision, reason, rule_id = "deny", blocking["message"], signal_id(blocking)
             elif needs_person and decision == "allow":
-                decision, reason, rule_id, rule = ("review", needs_person["message"],
-                                                   f"{prefix(needs_person)}:{needs_person['check']}", policy.DEFAULT_RULE)
+                decision, reason, rule_id, rule = "review", needs_person["message"], signal_id(needs_person), policy.DEFAULT_RULE
+            elif needs_person and decision == "review" and rule_id is None:
+                # held by the default anyway: give the approver the specific reason
+                reason, rule_id = needs_person["message"], signal_id(needs_person)
             elif (only_reads and not signals and decision == "review" and rule_id is None
                   and policy.commands["read_only"] == "allow"):
                 # Nothing matched but the default, and the command only looks: don't make a person approve `ls`.

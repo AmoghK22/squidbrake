@@ -52,6 +52,35 @@ command_checks:
   read_only: allow        # commands that only look (ls, cat, grep, git status/log/diff) run without asking,
                           # unless a rule below says otherwise. Set to off to approve those too.
 
+# Sequence rules judge an action by what came BEFORE it, and say which earlier step caused it.
+#   match   this action (same fields as rules: name, source, input_regex, input, ...)
+#   after   an earlier step in the same conversation that went ahead, within within_hours (default 24);
+#           same_target: true = only if it was on the same thing (same charge, file, account ...)
+#   count   more than `more_than` earlier matching actions within within_hours; scope: session | agent | all
+#   action  deny | review | warn
+sequences:
+  - id: destroy-after-recovery-removed
+    action: review
+    reason: Destroying data right after its backups or deletion protection were turned off
+    match:
+      input_regex: 'delete[-_ ]?db[-_ ]?(instance|cluster|snapshot)|delete[-_ ]?(bucket|volume|database|snapshot)|volumeDelete|s3\s+rb\b|terraform\s+destroy|drop\s+(table|database)'
+    after:
+      match:
+        input_regex: 'backup[-_ ]?retention[-_ ]?period\W{0,4}0\b|disable[-_ ]?backup|delete[-_ ]?(db[-_ ]?)?snapshot|deletion[-_ ]?protection\W{0,4}(false|0)\b|no-deletion-protection|point[-_ ]?in[-_ ]?time[-_ ]?recovery\W{0,4}(false|disabled)'
+      within_hours: 24
+
+  - id: runaway-refunds
+    action: deny
+    reason: Too many refunds in a short time; the agent may be stuck in a loop
+    match: { name: ["*refund*"] }
+    count: { more_than: 10, within_hours: 1, scope: agent }
+
+  - id: mass-deletes
+    action: review
+    reason: Many deletions in a short time
+    match: { input_regex: '\b(delete|destroy|drop|rm\s+-|rmdir|remove-item)\b' }
+    count: { more_than: 20, within_hours: 0.25, scope: session }
+
 rules:
   # ---- never allowed
   - id: block-destructive-shell

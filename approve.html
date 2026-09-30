@@ -165,7 +165,7 @@ a { color: var(--accent); }
   // ---- the story: history warnings + what the agent did just before
   const TITLES = { impersonation: "Possible scam", payment_request_in_message: "Payment requested in a message",
                    repeat_of_rejected: "Already rejected before", duplicate_change: "Done before",
-                   catastrophic_command: "Destructive command", irreversible_command: "Can't be undone", hidden_command: "Hidden code" };
+                   catastrophic_command: "Destructive command", irreversible_command: "Can't be undone", hidden_command: "Hidden code", sequence: "Pattern" };
   function signalsEl(signals) {
     if (!signals || !signals.length) return null;
     return el("div", {}, signals.map((s) => el("div", { class: "signal " + s.effect },

@@ -22,7 +22,8 @@ Free and open source (Apache 2.0). Runs on your laptop or your own server; your 
   split and read before they run. Wiping a disk or home folder is blocked; `git push --force`, `terraform destroy`,
   `kubectl delete` or cloud deletes wait for a person; commands that only look (`ls`, `git status`) run without asking.
 - **Judges by history:** blocks a retry of something a person rejected, catches look-alike domains
-  (`acrne-corp.com` pretending to be `acme.com`), flags duplicate refunds.
+  (`acrne-corp.com` pretending to be `acme.com`), flags duplicate refunds, and lets you write sequence rules
+  ("deleting a database right after its backups were turned off") that say which earlier step caused them.
 - **Works with real agents:** one command connects Claude Code (every tool call, via hooks), and any MCP app
   (Stripe, GitHub, Slack, databases, internal tools) can be wrapped for Antigravity, Cursor, Claude Desktop and others.
 - **For teams:** a key per person and per agent, roles (only `finance` approves wires), an emergency stop (all agents,
@@ -168,6 +169,32 @@ Shell tools (Claude Code's `Bash` and `PowerShell`, or any tool matching `comman
 
 Command checks apply even when a rule allows the tool, and `read_only: allow` only relaxes the `default` (never a
 rule or a warning). Configure them under `command_checks:` in `rules.yaml`.
+
+## Sequence rules
+
+Some actions are only dangerous because of what came before them. `sequences:` in `rules.yaml` judges an action by
+the steps before it and names the step that caused the decision:
+
+```yaml
+sequences:
+  - id: destroy-after-recovery-removed      # turn off backups, then delete the database
+    action: review
+    reason: Destroying data right after its backups or deletion protection were turned off
+    match: { input_regex: 'delete[-_ ]?db[-_ ]?instance|terraform\s+destroy|drop\s+(table|database)' }
+    after:
+      match: { input_regex: 'backup[-_ ]?retention[-_ ]?period\W{0,4}0|deletion[-_ ]?protection\W{0,4}false' }
+      within_hours: 24
+  - id: runaway-refunds                     # an agent stuck in a loop
+    action: deny
+    reason: Too many refunds in a short time
+    match: { name: ["*refund*"] }
+    count: { more_than: 10, within_hours: 1, scope: agent }
+```
+
+The approver then sees, for example: *Destroying data right after its backups were turned off. Because earlier:
+Bash `aws rds modify-db-instance --backup-retention-period 0` (12 minutes ago).* `after:` looks at steps in the same
+conversation that went ahead (`same_target: true` = on the same charge, file or account); `count:` counts earlier
+matching actions per `session`, `agent` or `all`. Actions: `deny`, `review` or `warn`.
 
 ## Human approval
 
