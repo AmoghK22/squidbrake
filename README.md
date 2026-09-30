@@ -154,6 +154,13 @@ Record an action that already happened in one call by including `output`/`error`
 `http://gateway:8080/proxy/<upstream>/...`. Optional headers: `X-Gateway-Source`, `X-Gateway-Session`.
 Denied requests get `403`; every response carries `X-Gateway-Event-Id`.
 
+## Try it on real work first: shadow mode
+
+Set `mode: shadow` in `rules.yaml` (or `shadow_agents: ["new-bot*"]` for some agents) and Squidbrake blocks and holds
+nothing: it records what it *would* have done. Reports then shows **would block** and **would hold** counts, and each
+event is tagged, so a team can see a week of real decisions before switching `mode: enforce` on. Stops and
+catastrophic commands (`rm -rf /`, wiping a drive) are enforced even in shadow mode.
+
 ## Command checks
 
 Shell tools (Claude Code's `Bash` and `PowerShell`, or any tool matching `command_checks.tools`) are read by

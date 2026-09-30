@@ -192,7 +192,8 @@ def test_approval_webhook(c, monkeypatch):
 def test_me(c):
     assert c.get("/v1/me", headers=H).json()["can_approve"] is False
     assert c.get("/v1/me", headers=BOSS).json() == {"client": "boss", "can_approve": True, "auth_enabled": True,
-                                                    "kind": "person", "roles": ["admin"], "is_admin": True}
+                                                    "kind": "person", "roles": ["admin"], "is_admin": True,
+                                                    "mode": "enforce", "shadow_agents": []}
 
 
 
@@ -290,6 +291,37 @@ sequences:
     rules.write_text("sequences: [{id: x, action: deny, match: {name: a}}]")     # no after/count: rejected
     os.utime(rules, (time.time(), time.time() + 5))
     assert post("loop.step", {"i": 4}, source="loop-bot")["decision"] == "deny"    # previous rules kept
+
+
+def test_shadow_mode(c, monkeypatch, tmp_path):
+    rules = tmp_path / "shadow.yaml"
+    rules.write_text("""
+mode: shadow
+default: allow
+history_checks: { repeat_of_rejected: off, impersonation: off, payment_request_in_message: off, duplicate_change: off }
+rules:
+  - { id: no-wires, action: deny, reason: No wires, match: { name: "*wire*" } }
+  - { id: refunds, action: review, reason: Refunds need a person, match: { name: "*refund*" } }
+""")
+    monkeypatch.setattr(server, "policy", server.Policy(rules))
+    post = lambda name, **kw: c.post("/v1/events", headers=H, json={"name": name, "source": "pilot-bot", **kw}).json()
+    d = post("bank.wire")
+    assert d["decision"] == "allow" and d["would"] == "deny" and d["rule_id"] == "no-wires" and "Would have been blocked" in d["reason"]
+    d = post("pay.refund")
+    assert d["decision"] == "allow" and d["would"] == "review" and d["status"] == "pending"
+    assert c.get(f"/v1/events/{d['event_id']}", headers=BOSS).json()["would"] == "review"
+    # still enforced in shadow mode: catastrophic commands
+    d = post("Bash", input={"command": "rm -rf ~/"})
+    assert d["decision"] == "deny" and d["would"] is None
+    r = c.get("/v1/reports/summary", headers=BOSS).json()
+    assert r["shadow"]["mode"] == "shadow" and r["shadow"]["would_block"] >= 1 and r["shadow"]["would_hold"] >= 1
+    assert c.get("/v1/me", headers=BOSS).json()["mode"] == "shadow"
+
+    rules.write_text(rules.read_text().replace("mode: shadow", "mode: enforce\nshadow_agents: [pilot-*]"))
+    os.utime(rules, (time.time(), time.time() + 5))
+    assert post("bank.wire")["would"] == "deny"                                   # the pilot agent: shadow
+    d = c.post("/v1/events", headers=H, json={"name": "bank.wire", "source": "prod-bot"}).json()
+    assert d["decision"] == "deny" and d["would"] is None                         # everyone else: enforced
 
 
 def test_record_only_skips_review(c):

@@ -31,6 +31,12 @@
 default: review
 default_reason: This changes something, so a person has to approve it
 
+# enforce: block and hold for real. shadow: block and hold nothing, only record what would have happened
+# (Reports shows "would block" / "would hold"), which is the easy way to try Squidbrake on real work.
+# Stops and catastrophic commands (rm -rf /, wiping a drive) are enforced in shadow mode too.
+mode: enforce
+shadow_agents: []          # shadow mode for just these agents (source or key names, globs), e.g. ["new-bot*"]
+
 # History checks look at what happened BEFORE an action, not just the action itself.
 # Each one: block (stop it), review (a person decides), warn (flag it for the approver), off.
 history_checks:

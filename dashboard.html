@@ -298,6 +298,9 @@ dialog .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 1
 .stop-banner { background: var(--critical); color: #fff; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px;
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .stop-banner b { font-size: 15px; }
+.shadow-banner { background: var(--surface-1); border: 1px dashed var(--serious); color: var(--text-primary);
+  border-radius: 10px; padding: 10px 16px; margin-bottom: 14px; font-size: 13.5px; }
+.tag.would { border-color: var(--serious); color: var(--serious); margin-left: 6px; }
 .stop-banner .btn { background: #fff; color: var(--critical); border-color: #fff; margin-left: auto; font-weight: 600; }
 .lede { color: var(--text-secondary); margin: 0 16px 12px; font-size: 13.5px; max-width: 900px; }
 code { font-family: var(--mono); font-size: .92em; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
@@ -371,6 +374,7 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
   </header>
 
   <div class="stop-banner" id="stopBanner" role="alert" hidden></div>
+  <div class="shadow-banner" id="shadowBanner" hidden></div>
 
   <div id="view-activity" class="view">
   <div class="filters" role="search">
@@ -933,7 +937,7 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
     const tr = el("tr", { tabindex: "0", "data-id": e.id, class: [fresh ? "fresh" : "", e.id === selectedId ? "sel" : ""].join(" ").trim() || null,
       onclick: () => openDrawer(e.id), onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openDrawer(e.id); } } },
       el("td", { title: new Date(e.created_at).toLocaleString() }, el("span", { text: fmtTime(e.created_at) }), " ", el("span", { class: "muted", text: fmtAgo(e.created_at) })),
-      el("td", {}, statusEl(e.status)),
+      el("td", {}, statusEl(e.status), e.would ? el("span", { class: "tag would", text: e.would === "deny" ? "would block" : "would hold" }) : null),
       el("td", { class: "mono trunc", title: e.name, text: e.name }),
       el("td", { class: "sec", text: e.kind }),
       el("td", {}, link("source", e.source)),
@@ -1033,6 +1037,11 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
     $("#meName").textContent = me.client;
     document.querySelectorAll("[data-admin]").forEach((n) => (n.hidden = !me.is_admin));
     $("#stopBtn").hidden = !(me.can_approve || me.is_admin);
+    const shadowAll = me.mode === "shadow", shadowSome = (me.shadow_agents || []).length > 0;
+    $("#shadowBanner").hidden = !(shadowAll || shadowSome);
+    $("#shadowBanner").replaceChildren(el("b", { text: "👁 Shadow mode" }), " ", el("span", { text: shadowAll
+      ? "is on: nothing is blocked or held. Squidbrake records what it would have done (see Reports). Set mode: enforce in rules.yaml to switch it on for real."
+      : `for ${me.shadow_agents.join(", ")}: their actions aren't blocked or held, only recorded. Everyone else is enforced.` }));
     if (!me.is_admin && view === "settings") showView("activity");
   }
   // Why this viewer can't decide on e, or null if they can.
@@ -1487,7 +1496,10 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
       tile("Held for a person", nf.format(a.held), `${a.waiting_now} waiting now`, "awaiting_approval"),
       tile("Approved by a person", nf.format(a.approved), `${a.rejected} rejected · ${a.timed_out} timed out`, "completed"),
       tile("Time to decide", dur(a.median_seconds_to_decide), "median"),
-      tile("Failed", nf.format(s.failed || 0), "errors from tools", "failed"));
+      tile("Failed", nf.format(s.failed || 0), "errors from tools", "failed"),
+      ...(r.shadow && (r.shadow.mode === "shadow" || r.shadow.agents.length || r.shadow.would_block || r.shadow.would_hold)
+        ? [tile("Shadow mode: would block", nf.format(r.shadow.would_block), "let through, only recorded", "denied"),
+           tile("Shadow mode: would hold", nf.format(r.shadow.would_hold), "would have asked a person", "awaiting_approval")] : []));
     const au = r.audit;
     $("#auditCard").replaceChildren(el("div", { class: "card-head" }, el("h2", { text: "Tamper check" }),
         el("button", { class: "linkish", text: "Re-check now", onclick: loadReports })),

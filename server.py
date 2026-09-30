@@ -357,6 +357,7 @@ events = Table(
     Column("decided_at", String(32)),
     Column("decision_note", Text),
     Column("signals", Text),                        # JSON list of history-check findings (see history_signals)
+    Column("would", String(10)),                    # shadow mode: what would have happened (deny | review), then allowed
 )
 
 # Small key/value store for state all workers share: the emergency stop and notification settings.
@@ -621,6 +622,7 @@ class Policy:
         self.commands: dict = dict(COMMAND_DEFAULTS)
         self.sequences: list[dict] = []
         self.source, self.fingerprint = "", verify.rules_fingerprint("")
+        self.mode, self.shadow_agents = "enforce", []
         self.upstreams: dict[str, str] = {}
 
     def _maybe_reload(self) -> None:
@@ -670,9 +672,15 @@ class Policy:
                     raise ValueError("command_checks.read_only must be allow or off")
                 cc["tools"] = [cc["tools"]] if isinstance(cc["tools"], str) else list(cc["tools"] or [])
                 sequences = self._compile_sequences(data.get("sequences"))
+                mode = str(data.get("mode", "enforce")).lower()
+                if mode not in ("enforce", "shadow"):
+                    raise ValueError("mode must be enforce or shadow")
+                shadow_agents = data.get("shadow_agents") or []
+                shadow_agents = [shadow_agents] if isinstance(shadow_agents, str) else list(shadow_agents)
                 self.default, self.rules, self.history, self.commands = default, rules, hc, cc
                 self.sequences = sequences
                 self.source, self.fingerprint = source, verify.rules_fingerprint(source)
+                self.mode, self.shadow_agents = mode, shadow_agents
                 self.default_reason = data.get("default_reason") or f"default {default}"
                 self.upstreams = {k: str(v).rstrip("/") for k, v in (data.get("upstreams") or {}).items()}
                 log.info("loaded %d rules from %s (default=%s)", len(rules), self.path, default)
@@ -682,6 +690,13 @@ class Policy:
             self._sig = sig
 
     DEFAULT_RULE = {"timeout_seconds": APPROVAL_TIMEOUT, "on_timeout": "deny", "approvers": None}
+
+    def shadow_for(self, source: str | None, client: str) -> bool:
+        """Shadow mode: record what would happen, but let it through (everything, or the agents listed)."""
+        self._maybe_reload()
+        if self.mode == "shadow":
+            return True
+        return any(fnmatch.fnmatchcase((k or "").lower(), g.lower()) for g in self.shadow_agents for k in (source, client))
 
     def evaluate(self, *, kind: str, name: str, source: str | None, client: str,
                  session_id: str | None, input: Any) -> tuple[str, str, str | None, dict]:
@@ -729,6 +744,7 @@ class Decision(BaseModel):
     decided_by: str | None = None
     decision_note: str | None = None
     signals: list[dict] | None = None  # history-check findings, e.g. possible impersonation
+    would: str | None = None           # shadow mode: deny | review that was let through
 
 
 class ApprovalIn(BaseModel):
@@ -1030,6 +1046,12 @@ def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
                 # Nothing matched but the default, and the command only looks: don't make a person approve `ls`.
                 decision, reason, rule_id = "allow", "Only reads (like ls, cat, grep, git status), so it runs without asking", \
                     "command:read_only"
+    would = None
+    # Shadow mode lets it through but records what would have happened. Stops and catastrophic commands still apply.
+    if decision in ("deny", "review") and rule_id not in ("emergency-stop", "session-stop", "command:catastrophic_command")             and policy.shadow_for(ev.source, client):
+        would = decision
+        reason = f"Shadow mode, allowed. Would have {'been blocked' if decision == 'deny' else 'waited for approval'}: {reason}"
+        decision = "allow"
     already_ran = ev.error is not None or ev.output is not None
     if decision == "review" and already_ran:
         # A record-only event has already happened; there is nothing left to approve.
@@ -1061,6 +1083,7 @@ def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
         "approval_on_timeout": rule["on_timeout"] if deadline else None,
         "approvers": json.dumps(rule["approvers"]) if deadline and rule["approvers"] else None,
         "signals": json.dumps(signals) if signals else None,
+        "would": would,
     }
     with audited_tx() as conn:
         record_policy_version(conn)
@@ -1068,13 +1091,13 @@ def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
         audit(conn, client, "event.created", row["id"], rules=policy.fingerprint, name=ev.name, kind=ev.kind, source=ev.source,
               session_id=ev.session_id, status=status, decision=decision, rule_id=rule_id, reason=reason,
               input_sha256=_sha(row["input"]), output_sha256=_sha(row["output"]),
-              signals=[f"{x['check']}:{x['effect']}" for x in signals] or None)
+              signals=[f"{x['check']}:{x['effect']}" for x in signals] or None, would=would)
     audit_log.info(json.dumps({k: row[k] for k in ("id", "created_at", "client", "source", "session_id",
                                                     "kind", "name", "status", "rule_id")}))
     if status == "awaiting_approval":
         notify_approval_needed(row)
     return Decision(event_id=row["id"], decision=decision, reason=reason, rule_id=rule_id,
-                    status=status, approval_deadline=deadline, signals=signals or None)
+                    status=status, approval_deadline=deadline, signals=signals or None, would=would)
 
 
 # --------------------------------------------------------------------------- notifications + approval links
@@ -1452,7 +1475,8 @@ def reject(event_id: str, body: ApprovalIn | None = None, who: str = Depends(aut
 def me(who: str = Depends(auth)):
     i = keystore.info(who)
     return {"client": who, "kind": i["kind"], "roles": i["roles"], "is_admin": keystore.is_admin(who),
-            "can_approve": can_approve(who), "auth_enabled": keystore.enabled}
+            "can_approve": can_approve(who), "auth_enabled": keystore.enabled,
+            "mode": policy.mode, "shadow_agents": policy.shadow_agents}
 
 
 @app.get("/v1/me/phone-link")
@@ -1731,6 +1755,8 @@ def build_report(days: int) -> dict:
             count_if(human & (events.c.decision == "allow")).label("approved"),
             count_if(human & (events.c.decision == "deny")).label("rejected"),
             count_if(events.c.status == "failed").label("failed"),
+            count_if(events.c.would == "deny").label("would_block"),
+            count_if(events.c.would == "review").label("would_hold"),
             func.max(events.c.created_at).label("last_seen"),
         ).where(in_period).group_by(agent).order_by(text("total DESC")))]
         blocked = [dict(r._mapping) for r in conn.execute(select(
@@ -1761,6 +1787,9 @@ def build_report(days: int) -> dict:
     return {"generated_at": utcnow(), "days": days, "since": since, "total": sum(by_status.values()),
             "by_status": by_status, "agents": agents, "approvals": approvals, "blocked_by_rule": blocked,
             "top_tools": top_tools, "controls": state_get("stop", {"all": None, "agents": {}}),
+            "shadow": {"mode": policy.mode, "agents": policy.shadow_agents,
+                       "would_block": sum(a["would_block"] or 0 for a in agents),
+                       "would_hold": sum(a["would_hold"] or 0 for a in agents)},
             "audit": verify_audit_chain()}
 
 
@@ -1801,7 +1830,7 @@ def audit_entries(limit: int = Query(100, ge=1, le=1000), _: str = Depends(perso
 
 EXPORT_COLUMNS = ["created_at", "id", "source", "client", "session_id", "kind", "name", "status", "decision",
                   "rule_id", "reason", "decided_by", "decided_at", "decision_note", "completed_at", "duration_ms",
-                  "error", "input", "output"]
+                  "error", "input", "output", "would"]
 
 
 @app.get("/v1/audit/export.csv")
