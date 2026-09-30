@@ -41,6 +41,17 @@ history_checks:
   payment_request_in_message: review   # moving money right after reading a message that asks for a payment
   duplicate_change: warn               # the same change on the same thing again (e.g. a 2nd refund on one charge)
 
+# Command checks read what a shell command actually DOES before it runs: they split `a && b`, look inside
+# `bash -c "..."`, `sudo`, `xargs` and `$(...)`, and understand rm / git / terraform / kubectl / cloud CLIs / SQL.
+# Each one: block, review, warn, off. They apply even when a rule below allows the tool.
+command_checks:
+  tools: ["Bash", "PowerShell", "*shell*", "*run_command*", "*execute_command*", "*terminal*", "*exec_command*"]
+  catastrophic: block     # rm -rf /, rm -rf ~, wiping a drive (rmdir /s d:\), mkfs, dd onto a disk, chmod -R 777 /
+  irreversible: review    # rm -r, git push --force, git reset --hard, terraform destroy, kubectl delete, cloud deletes, DROP TABLE
+  hidden: review          # code that can't be read first: eval, curl ... | sh, base64 -d | bash, powershell -EncodedCommand
+  read_only: allow        # commands that only look (ls, cat, grep, git status/log/diff) run without asking,
+                          # unless a rule below says otherwise. Set to off to approve those too.
+
 rules:
   # ---- never allowed
   - id: block-destructive-shell

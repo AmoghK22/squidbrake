@@ -18,6 +18,9 @@ Free and open source (Apache 2.0). Runs on your laptop or your own server; your 
   No LLM in the decision path.
 - **Human approval:** risky actions wait in the dashboard, on your phone (one-tap links, push via ntfy) or in Slack.
   The approver sees *what led to it*, e.g. the email the agent just read.
+- **Reads what a command really does:** `ls && rm -rf ~/`, `bash -c "..."`, `rmdir /s /q d:\` or `curl ... | sh` are
+  split and read before they run. Wiping a disk or home folder is blocked; `git push --force`, `terraform destroy`,
+  `kubectl delete` or cloud deletes wait for a person; commands that only look (`ls`, `git status`) run without asking.
 - **Judges by history:** blocks a retry of something a person rejected, catches look-alike domains
   (`acrne-corp.com` pretending to be `acme.com`), flags duplicate refunds.
 - **Works with real agents:** one command connects Claude Code (every tool call, via hooks), and any MCP app
@@ -148,6 +151,22 @@ Record an action that already happened in one call by including `output`/`error`
 **HTTP proxy** - no code changes: define `upstreams` in `rules.yaml`, then point the client at
 `http://gateway:8080/proxy/<upstream>/...`. Optional headers: `X-Gateway-Source`, `X-Gateway-Session`.
 Denied requests get `403`; every response carries `X-Gateway-Event-Id`.
+
+## Command checks
+
+Shell tools (Claude Code's `Bash` and `PowerShell`, or any tool matching `command_checks.tools`) are read by
+[`commands.py`](commands.py) before the rules decide: the line is split on `&&`, `;`, `|` (outside quotes), and
+`sudo`, `xargs`, `bash -c`, `powershell -Command` and `$(...)` are looked inside. Nothing is ever run or expanded.
+
+| Kind | Examples | Default |
+|---|---|---|
+| catastrophic | `rm -rf /`, `rm -rf ~`, `rmdir /s /q d:\`, `mkfs`, `dd of=/dev/sda`, `chmod -R 777 /` | block |
+| irreversible | `rm -r`, `git push --force`, `git reset --hard`, `terraform destroy`, `kubectl delete`, `aws ... delete-*`, `DROP TABLE` | review |
+| hidden | `eval`, `curl ... \| sh`, `base64 -d \| bash`, `powershell -EncodedCommand` | review |
+| read_only | `ls`, `cat`, `grep`, `git status` / `log` / `diff` | `allow` in the shipped `rules.yaml` |
+
+Command checks apply even when a rule allows the tool, and `read_only: allow` only relaxes the `default` (never a
+rule or a warning). Configure them under `command_checks:` in `rules.yaml`.
 
 ## Human approval
 

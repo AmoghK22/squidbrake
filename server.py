@@ -58,6 +58,8 @@ from sqlalchemy import (
     and_, func, inspect as sa_inspect, or_, select, text, update,
 )
 
+import commands
+
 # --------------------------------------------------------------------------- config
 
 # Every setting is optional. A .env file next to this one is picked up automatically.
@@ -499,6 +501,16 @@ HISTORY_DEFAULTS = {
     "duplicate_change": "review",           # the same change on the same target again (e.g. a 2nd refund)
 }
 
+# Command checks (rules.yaml `command_checks:`) read what a shell command actually does (see commands.py).
+COMMAND_EFFECT_KEYS = ("catastrophic", "irreversible", "hidden")
+COMMAND_DEFAULTS = {
+    "tools": ["Bash", "PowerShell", "*shell*", "*run_command*", "*execute_command*", "*terminal*", "*exec_command*"],
+    "catastrophic": "block",   # wipes a disk, the filesystem or a home folder: rm -rf /, rm -rf ~, mkfs, dd onto a disk
+    "irreversible": "review",  # rm -r, git push --force, git reset --hard, terraform destroy, kubectl delete, DROP TABLE
+    "hidden": "review",        # code that can't be read first: eval, curl | sh, base64 -d | bash, -EncodedCommand
+    "read_only": "off",        # "allow": commands that only look (ls, cat, grep, git status) run without asking
+}
+
 
 class Policy:
     """rules.yaml, hot-reloaded whenever the file changes. First matching rule wins."""
@@ -550,6 +562,7 @@ class Policy:
         self.default_reason = "default allow"
         self.rules: list[dict] = []
         self.history: dict = dict(HISTORY_DEFAULTS)
+        self.commands: dict = dict(COMMAND_DEFAULTS)
         self.upstreams: dict[str, str] = {}
 
     def _maybe_reload(self) -> None:
@@ -589,7 +602,17 @@ class Policy:
                     if hc[k] not in ("block", "review", "warn", "off"):
                         raise ValueError(f"history_checks.{k} must be block, review, warn or off")
                 hc["company_domains"] = [d.lower().strip() for d in hc["company_domains"] or []]
-                self.default, self.rules, self.history = default, rules, hc
+                cc = {**COMMAND_DEFAULTS, **(data.get("command_checks") or {})}
+                for k in COMMAND_EFFECT_KEYS:
+                    cc[k] = "off" if cc[k] is False else COMMAND_DEFAULTS[k] if cc[k] is True else str(cc[k]).lower()
+                    if cc[k] not in ("block", "review", "warn", "off"):
+                        raise ValueError(f"command_checks.{k} must be block, review, warn or off")
+                cc["read_only"] = "off" if cc["read_only"] is False else "allow" if cc["read_only"] is True \
+                    else str(cc["read_only"]).lower()
+                if cc["read_only"] not in ("allow", "off"):
+                    raise ValueError("command_checks.read_only must be allow or off")
+                cc["tools"] = [cc["tools"]] if isinstance(cc["tools"], str) else list(cc["tools"] or [])
+                self.default, self.rules, self.history, self.commands = default, rules, hc, cc
                 self.default_reason = data.get("default_reason") or f"default {default}"
                 self.upstreams = {k: str(v).rstrip("/") for k, v in (data.get("upstreams") or {}).items()}
                 log.info("loaded %d rules from %s (default=%s)", len(rules), self.path, default)
@@ -828,6 +851,23 @@ def history_signals(conn, name: str, input: Any, stored_input: str | None, sourc
     return out
 
 
+def command_signals(name: str, input: Any) -> tuple[list[dict], bool]:
+    """What a shell tool's command actually does (commands.py). -> (signals, only_reads)."""
+    cc = policy.commands
+    if not any(fnmatch.fnmatchcase(name.lower(), t.lower()) for t in cc["tools"]):
+        return [], False
+    line = commands.command_of(input)
+    if not line:
+        return [], False
+    reading = commands.read(line)
+    kind = reading.kind
+    if kind in COMMAND_EFFECT_KEYS:
+        if cc[kind] == "off":
+            return [], False
+        return [{"check": f"{kind}_command", "effect": cc[kind], "message": f"This command {reading.summary()}."}], False
+    return [], kind == "read_only"
+
+
 def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
     signals: list[dict] = []
     if stop := stopped_for(ev.source, client):
@@ -839,15 +879,23 @@ def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
             kind=ev.kind, name=ev.name, source=ev.source, client=client, session_id=ev.session_id, input=ev.input
         )
         if decision != "deny":
+            signals, only_reads = command_signals(ev.name, ev.input)
             with engine.connect() as conn:
-                signals = history_signals(conn, ev.name, ev.input, to_stored_json(ev.input), ev.source,
-                                          ev.session_id, is_change=decision == "review")
+                signals += history_signals(conn, ev.name, ev.input, to_stored_json(ev.input), ev.source,
+                                           ev.session_id, is_change=decision == "review")
             blocking = next((s for s in signals if s["effect"] == "block"), None)
             needs_person = next((s for s in signals if s["effect"] == "review"), None)
+            prefix = lambda s: "command" if s["check"].endswith("_command") else "history"
             if blocking and ev.output is None and ev.error is None:
-                decision, reason, rule_id = "deny", blocking["message"], f"history:{blocking['check']}"
+                decision, reason, rule_id = "deny", blocking["message"], f"{prefix(blocking)}:{blocking['check']}"
             elif needs_person and decision == "allow":
-                decision, reason, rule_id, rule = "review", needs_person["message"], f"history:{needs_person['check']}", policy.DEFAULT_RULE
+                decision, reason, rule_id, rule = ("review", needs_person["message"],
+                                                   f"{prefix(needs_person)}:{needs_person['check']}", policy.DEFAULT_RULE)
+            elif (only_reads and not signals and decision == "review" and rule_id is None
+                  and policy.commands["read_only"] == "allow"):
+                # Nothing matched but the default, and the command only looks: don't make a person approve `ls`.
+                decision, reason, rule_id = "allow", "Only reads (like ls, cat, grep, git status), so it runs without asking", \
+                    "command:read_only"
     already_ran = ev.error is not None or ev.output is not None
     if decision == "review" and already_ran:
         # A record-only event has already happened; there is nothing left to approve.
