@@ -1227,6 +1227,16 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
     return d;
   }
 
+  function sessionControl(session) {
+    if (!session || !me) return null;
+    const stopped = (controlsState.sessions || {})[session];
+    if (stopped) return el("span", {}, " ", el("span", { class: "tag", style: "border-color:var(--critical);color:var(--critical)", text: "stopped" }),
+      me.is_admin ? el("button", { class: "linkish", text: "resume", onclick: () => resume(null, session) }) : null);
+    return me.can_approve || me.is_admin
+      ? el("span", {}, " ", el("button", { class: "linkish", style: "color:var(--critical)", text: "⏹ stop this session", onclick: () => askStop(null, session) }))
+      : null;
+  }
+
   function renderDrawer(e) {
     drawerEvent = e;
     $("#drTitle").textContent = e.name;
@@ -1244,7 +1254,7 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
     const kv = [
       ["Event ID", el("span", {}, el("span", { class: "mono", text: e.id }), " ", el("button", { class: "linkish", text: "copy", onclick: (ev) => copy(e.id, ev.target) }))],
       ["Kind", e.kind], ["Decision", `${e.decision}${e.reason ? " — " + e.reason : ""}`], ["Rule", e.rule_id || "—"],
-      ["Source", filt("source", e.source)], ["Session", filt("session_id", e.session_id)],
+      ["Source", filt("source", e.source)], ["Session", el("span", {}, filt("session_id", e.session_id), sessionControl(e.session_id))],
       ["Client", filt("client", e.client)], ["Client IP", e.client_ip || "—"],
       ["Created", new Date(e.created_at).toLocaleString() + "  (" + fmtAgo(e.created_at) + ")"],
       ["Completed", e.completed_at ? new Date(e.completed_at).toLocaleString() : "—"],
@@ -1345,23 +1355,28 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
     controlsState = await api("/v1/controls");
     const b = $("#stopBanner"), s = controlsState.all;
     const agentsStopped = Object.keys(controlsState.agents || {});
+    const sessionsStopped = Object.keys(controlsState.sessions || {});
     if (s) {
       b.hidden = false;
       b.replaceChildren(el("b", { text: "⏹ All agents are stopped." }),
         el("span", { text: `By ${s.by} ${fmtAgo(s.at)}${s.reason ? " — " + s.reason : ""}. Every action they try is blocked.` }),
         me && me.is_admin ? el("button", { class: "btn", text: "Resume all agents", onclick: () => resume(null) }) : null);
-    } else if (agentsStopped.length) {
+    } else if (agentsStopped.length || sessionsStopped.length) {
       b.hidden = false;
-      b.replaceChildren(el("b", { text: `⏹ Stopped: ${agentsStopped.join(", ")}` }),
-        el("span", { text: "Other agents are running normally. Manage per agent in Reports." }));
+      const what = [...agentsStopped, ...sessionsStopped.map((x) => "session " + x)];
+      b.replaceChildren(el("b", { text: `⏹ Stopped: ${what.join(", ")}` }),
+        el("span", { text: "Everything else is running normally." }),
+        ...(me && me.is_admin ? sessionsStopped.map((x) => el("button", { class: "btn", text: `Resume session ${x.slice(0, 18)}`, onclick: () => resume(null, x) })) : []));
     } else b.hidden = true;
     $("#stopBtn").textContent = s ? "⏹ Agents stopped" : "⏹ Stop agents";
     $("#stopBtn").disabled = !!s;
   }
-  let stopTarget = null;
-  function askStop(agent) {
-    stopTarget = agent;
-    $("#stopWhat").textContent = agent
+  let stopTarget = null, stopSession = null;
+  function askStop(agent, session = null) {
+    stopTarget = agent; stopSession = session;
+    $("#stopWhat").textContent = session
+      ? `This conversation (${session}) is stopped: its next action is blocked, Claude Code ends its turn, and anything it's waiting on is rejected. Other sessions keep working.`
+      : agent
       ? `Every action “${agent}” tries will be blocked until an admin resumes it. Other agents keep working.`
       : "Every action any agent tries will be blocked immediately, until an admin resumes them. Actions already running aren't interrupted.";
     $("#stopReason").value = "";
@@ -1372,16 +1387,18 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
   $("#stopCancel").addEventListener("click", () => $("#stopDlg").close());
   $("#stopForm").addEventListener("submit", async () => {
     try {
-      await apiPost("/v1/controls/stop", { agent: stopTarget, reason: $("#stopReason").value.trim() || null });
-      toast(stopTarget ? `Stopped ${stopTarget}` : "All agents stopped");
+      await apiPost("/v1/controls/stop", { agent: stopTarget, session: stopSession, reason: $("#stopReason").value.trim() || null });
+      toast(stopSession ? "Session stopped" : stopTarget ? `Stopped ${stopTarget}` : "All agents stopped");
       await loadControls(); if (view === "reports") loadReports();
+      if (drawerEvent && stopSession) renderDrawer(drawerEvent);
     } catch (err) { toast(err.message); }
   });
-  async function resume(agent) {
+  async function resume(agent, session = null) {
     try {
-      await apiPost("/v1/controls/resume", { agent });
-      toast(agent ? `Resumed ${agent}` : "All agents resumed");
+      await apiPost("/v1/controls/resume", { agent, session });
+      toast(session ? "Session resumed" : agent ? `Resumed ${agent}` : "All agents resumed");
       await loadControls(); if (view === "reports") loadReports();
+      if (drawerEvent && session) renderDrawer(drawerEvent);
     } catch (err) { toast(err.message); }
   }
 
@@ -1490,7 +1507,7 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
         "event.expired": () => `nobody decided in time → ${d.outcome}`,
         "event.completed": () => `finished${d.duration_ms != null ? " in " + fmtDur(d.duration_ms) : ""}`,
         "event.failed": () => `failed: ${d.error || ""}`,
-        "controls.stopped": () => `${e.target === "*" ? "stopped ALL agents" : "stopped " + e.target}${d.reason ? ": " + d.reason : ""}`,
+        "controls.stopped": () => `${e.target === "*" ? "stopped ALL agents" : "stopped " + e.target.replace("session:", "session ")}${d.reason ? ": " + d.reason : ""}`,
         "controls.resumed": () => e.target === "*" ? "resumed all agents" : `resumed ${e.target}`,
         "team.added": () => `added ${e.target} (${d.kind}${d.approver ? ", can approve" : ""}${d.roles && d.roles.length ? ", " + d.roles.join("/") : ""})`,
         "team.updated": () => `changed ${e.target}: ${d.approver ? "can approve" : "view only"}${d.roles && d.roles.length ? ", " + d.roles.join("/") : ""}`,

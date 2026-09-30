@@ -690,14 +690,16 @@ class ApprovalIn(BaseModel):
 # --------------------------------------------------------------------------- core
 
 
-def stopped_for(source: str | None, client: str) -> dict | None:
-    """The emergency stop that applies to this caller, if any: everything, or one agent (by source or key)."""
-    s = state_get("stop", {"all": None, "agents": {}})
+def stopped_for(source: str | None, client: str, session_id: str | None = None) -> dict | None:
+    """The stop that applies to this caller, if any: everything, one agent (by source or key), or one session."""
+    s = state_get("stop", {"all": None, "agents": {}, "sessions": {}})
     if s.get("all"):
         return s["all"]
     for k in (source, client):
         if k and k in s.get("agents", {}):
             return s["agents"][k]
+    if session_id and session_id in s.get("sessions", {}):
+        return {**s["sessions"][session_id], "session": session_id}
     return None
 
 
@@ -870,9 +872,10 @@ def command_signals(name: str, input: Any) -> tuple[list[dict], bool]:
 
 def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
     signals: list[dict] = []
-    if stop := stopped_for(ev.source, client):
-        decision, rule_id, rule = "deny", "emergency-stop", policy.DEFAULT_RULE
-        reason = f"Emergency stop by {stop['by']}" + (f": {stop['reason']}" if stop.get("reason") else "")
+    if stop := stopped_for(ev.source, client, ev.session_id):
+        decision, rule = "deny", policy.DEFAULT_RULE
+        rule_id = "session-stop" if stop.get("session") else "emergency-stop"
+        reason = (f"This session was stopped by {stop['by']}" if stop.get("session") else f"Emergency stop by {stop['by']}")             + (f": {stop['reason']}" if stop.get("reason") else "")
     else:
         # Policy sees the raw input; storage only ever sees the redacted copy.
         decision, reason, rule_id, rule = policy.evaluate(
@@ -1392,6 +1395,7 @@ def team_remove(name: str, who: str = Depends(admin)):
 
 class StopIn(BaseModel):
     agent: str | None = Field(None, description="an agent's source or key name; omit to stop everything")
+    session: str | None = Field(None, max_length=200, description="stop just this session (one conversation)")
     reason: str | None = Field(None, max_length=500)
 
 
@@ -1406,16 +1410,27 @@ def controls_stop(body: StopIn, who: str = Depends(person)):
     if not (can_approve(who) or keystore.is_admin(who)):
         raise HTTPException(403, "only approvers and admins can stop agents")
     entry = {"by": who, "at": utcnow(), "reason": body.reason}
+    target = f"session:{body.session}" if body.session else body.agent or "*"
     with audited_tx() as conn:
         s = json.loads(conn.execute(select(gateway_state.c.value).where(gateway_state.c.key == "stop")).scalar()
                        or '{"all": null, "agents": {}}')
-        if body.agent:
+        if body.session:
+            s.setdefault("sessions", {})[body.session] = entry
+            # Anything still waiting in that session is rejected: nobody should approve half of a stopped run.
+            waiting = conn.execute(select(events.c.id).where(events.c.session_id == body.session,
+                                                             events.c.status == "awaiting_approval")).all()
+            note = "The session was stopped" + (f": {body.reason}" if body.reason else "")
+            for (eid,) in waiting:
+                if conn.execute(update(events).where(events.c.id == eid, events.c.status == "awaiting_approval").values(
+                        status="denied", decision="deny", decided_by=who, decided_at=utcnow(), decision_note=note)).rowcount:
+                    audit(conn, who, "event.rejected", eid, note=note, via="session-stop")
+        elif body.agent:
             s.setdefault("agents", {})[body.agent] = entry
         else:
             s["all"] = entry
         state_set(conn, "stop", s)
-        audit(conn, who, "controls.stopped", body.agent or "*", reason=body.reason)
-    log.warning("EMERGENCY STOP (%s) by %s: %s", body.agent or "all agents", who, body.reason)
+        audit(conn, who, "controls.stopped", target, reason=body.reason)
+    log.warning("STOP (%s) by %s: %s", target if target != "*" else "all agents", who, body.reason)
     return s
 
 
@@ -1424,12 +1439,14 @@ def controls_resume(body: StopIn, who: str = Depends(admin)):
     with audited_tx() as conn:
         s = json.loads(conn.execute(select(gateway_state.c.value).where(gateway_state.c.key == "stop")).scalar()
                        or '{"all": null, "agents": {}}')
-        if body.agent:
+        if body.session:
+            s.setdefault("sessions", {}).pop(body.session, None)
+        elif body.agent:
             s.setdefault("agents", {}).pop(body.agent, None)
         else:
             s["all"] = None
         state_set(conn, "stop", s)
-        audit(conn, who, "controls.resumed", body.agent or "*")
+        audit(conn, who, "controls.resumed", f"session:{body.session}" if body.session else body.agent or "*")
     return s
 
 

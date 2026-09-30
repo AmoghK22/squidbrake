@@ -22,7 +22,7 @@ person** when it's risky, **recorded** in a tamper-evident audit trail, and can 
 | **Team** | add people (view / approve / admin, plus roles like `finance`) and agents; each gets its own key |
 | **Reports** | per-agent activity, approvals, what was blocked, the tamper check, audit trail; CSV export and print-to-PDF |
 | **Settings** | phone and Slack notifications, public address, test what a rule would do |
-| **⏹ Stop agents** | blocks every agent immediately (or one agent, from Reports) until an admin resumes |
+| **⏹ Stop agents** | blocks every agent immediately (or one agent from Reports, or one conversation from any event's details) until an admin resumes |
 | **📱 Phone** | scan once; approve from your phone from then on |
 
 ## The demo scenario: an AI support agent at "Acme Inc"

@@ -40,9 +40,13 @@ SKIP_PREFIXES = ("mcp__gateway-db__", "mcp__gw-")
 STATE_DIR = Path(tempfile.gettempdir()) / "squidbrake-hook"
 
 
-def deny(reason: str) -> None:
-    print(json.dumps({"hookSpecificOutput": {
-        "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}))
+def deny(reason: str, stop: bool = False) -> None:
+    """Refuse this tool call. stop=True also ends Claude's turn (the agent or its session was stopped)."""
+    out: dict = {"hookSpecificOutput": {
+        "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}
+    if stop:
+        out.update({"continue": False, "stopReason": reason})
+    print(json.dumps(out))
     sys.exit(0)
 
 
@@ -78,6 +82,8 @@ def pre(ev: dict, http: httpx.Client) -> None:
         deny("Squidbrake: nobody approved this in time. Ask the user to approve it in the dashboard, then try again.")
     if d["decision"] == "deny":
         by = d.get("decided_by")
+        if d.get("rule_id") in ("emergency-stop", "session-stop") or                 (d.get("decision_note") or "").startswith("The session was stopped"):
+            deny(f"Squidbrake: {d.get('decision_note') or d.get('reason')}. Stop working and tell the user.", stop=True)
         if by and by != "timeout":
             note = f' Note: "{d["decision_note"]}".' if d.get("decision_note") else ""
             deny(f"Squidbrake: rejected by {by}.{note} Don't retry it; ask the user how to proceed.")

@@ -443,6 +443,25 @@ def test_emergency_stop(c, org):
     assert c.post("/v1/events", headers=org["agent"], json={"name": "t", "source": "rogue-bot"}).json()["decision"] == "allow"
 
 
+def test_session_stop(c, org):
+    sid, other = f"conv-{time.time_ns()}", f"conv-other-{time.time_ns()}"
+    held = c.post("/v1/events", headers=org["agent"], json={"name": "payments.refund", "session_id": sid}).json()
+    assert held["decision"] == "review"
+    assert c.post("/v1/controls/stop", headers=org["viewer"], json={"session": sid}).status_code == 403
+    c.post("/v1/controls/stop", headers=org["finance-lead"], json={"session": sid, "reason": "went off task"})
+    # what it was waiting on is rejected, with a note the agent can recognise
+    d = c.get(f"/v1/events/{held['event_id']}/decision", headers=org["agent"]).json()
+    assert d["decision"] == "deny" and d["decision_note"].startswith("The session was stopped")
+    d = c.post("/v1/events", headers=org["agent"], json={"name": "t", "session_id": sid}).json()
+    assert d["decision"] == "deny" and d["rule_id"] == "session-stop" and "went off task" in d["reason"]
+    assert c.post("/v1/events", headers=org["agent"], json={"name": "t", "session_id": other}).json()["decision"] == "allow"
+    assert c.post("/v1/controls/resume", headers=org["finance-lead"], json={"session": sid}).status_code == 403
+    c.post("/v1/controls/resume", headers=org["admin"], json={"session": sid})
+    assert c.post("/v1/events", headers=org["agent"], json={"name": "t", "session_id": sid}).json()["decision"] == "allow"
+    log = c.get("/v1/audit/log", headers=org["admin"]).json()
+    assert any(e["action"] == "controls.stopped" and e["target"] == f"session:{sid}" for e in log["entries"])
+
+
 def test_audit_chain_detects_tampering(c, org):
     eid = c.post("/v1/events", headers=org["agent"], json={"name": "payments.refund"}).json()["event_id"]
     c.post(f"/v1/events/{eid}/reject", headers=org["admin"], json={"note": "no"})

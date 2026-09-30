@@ -25,7 +25,8 @@ Free and open source (Apache 2.0). Runs on your laptop or your own server; your 
   (`acrne-corp.com` pretending to be `acme.com`), flags duplicate refunds.
 - **Works with real agents:** one command connects Claude Code (every tool call, via hooks), and any MCP app
   (Stripe, GitHub, Slack, databases, internal tools) can be wrapped for Antigravity, Cursor, Claude Desktop and others.
-- **For teams:** a key per person and per agent, roles (only `finance` approves wires), an emergency stop,
+- **For teams:** a key per person and per agent, roles (only `finance` approves wires), an emergency stop (all agents,
+  one agent, or one conversation, which also ends Claude Code's turn),
   reports, CSV export and an audit trail you can verify.
 - **Fails closed:** if Squidbrake is down, guarded tools don't run.
 

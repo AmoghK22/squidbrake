@@ -191,6 +191,8 @@ async def gw_result(event_id: str, output: Any = None, error: str | None = None,
 
 def denied_text(d: dict) -> str:
     by = d.get("decided_by")
+    if d.get("rule_id") in ("emergency-stop", "session-stop") or (d.get("decision_note") or "").startswith("The session was stopped"):
+        return f"NOT RUN: {d.get('decision_note') or d.get('reason')}. Stop working now and tell the user; don't try anything else."
     if by == "timeout":
         return f"NOT RUN: nobody approved it in time ({d.get('reason')}). Tell the user it needs approval in Squidbrake."
     if by:
