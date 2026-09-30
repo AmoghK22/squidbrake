@@ -197,6 +197,10 @@ async def run_round(rnd: Round) -> None:
 
 
 def main() -> None:
+    # The Codespaces editor task passes --codespaces-only, so opening the repo in VS Code elsewhere doesn't start it
+    if "--codespaces-only" in sys.argv and os.getenv("CODESPACES") != "true":
+        print("Squidbrake live demo: runs by itself only in GitHub Codespaces. Start it with: python demo/live_demo.py")
+        return
     first = True
     while True:
         rnd = Round()

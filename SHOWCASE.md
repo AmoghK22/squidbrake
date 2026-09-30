@@ -8,7 +8,7 @@ person** when it's risky, **recorded** in a tamper-evident audit trail, and can 
 
 - **Just watch:** `python demo/live_demo.py` runs this whole scenario by itself (a demo manager approves and
   rejects), resetting every hour. Or click *Open in Codespaces* in the README: the demo starts by itself and
-  opens in a new tab (or open port 8090 from the Ports tab; its log is in `/tmp/squidbrake-demo.log`).
+  opens in a new tab (or open port 8090 from the Ports tab; it runs in the "Squidbrake live demo" terminal).
 - **Try it on your PC:** `start.bat` (Windows) or `./start.sh`. It prints your keys and opens the dashboard.
 - **24/7 on a server:** copy the folder to any Linux server (a free Oracle Cloud VM works) and run `bash install.sh`.
   You get `https://<your-server-ip>.sslip.io/dashboard` with HTTPS, no domain needed.

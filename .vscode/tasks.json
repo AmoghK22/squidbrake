@@ -1,0 +1,15 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Squidbrake live demo",
+      "detail": "Starts the live demo when this repo opens in GitHub Codespaces (does nothing elsewhere)",
+      "type": "shell",
+      "command": "python demo/live_demo.py --codespaces-only",
+      "runOptions": { "runOn": "folderOpen" },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": false }
+    }
+  ]
+}
