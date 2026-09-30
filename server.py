@@ -1112,8 +1112,9 @@ def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
                 # Most telling first: a sequence names the step that caused it; history checks are specific to
                 # the business (who asked for this payment); taint and command checks are more general.
                 signals = sequence_signals(conn, ev, client)
+                # A command that only looks isn't a change: running `git status` twice is not a duplicate.
                 signals += history_signals(conn, ev.name, ev.input, to_stored_json(ev.input), ev.source,
-                                           ev.session_id, is_change=decision == "review")
+                                           ev.session_id, is_change=decision == "review" and not only_reads)
                 signals += taint_signals(conn, ev, client) + command_found
             blocking = next((s for s in signals if s["effect"] == "block"), None)
             needs_person = next((s for s in signals if s["effect"] == "review"), None)
@@ -1127,8 +1128,8 @@ def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
             elif needs_person and decision == "review" and rule_id is None:
                 # held by the default anyway: give the approver the specific reason
                 reason, rule_id = needs_person["message"], signal_id(needs_person)
-            elif (only_reads and not signals and decision == "review" and rule_id is None
-                  and policy.commands["read_only"] == "allow"):
+            elif (only_reads and decision == "review" and rule_id is None and policy.commands["read_only"] == "allow"
+                  and not any(s["effect"] in ("block", "review") for s in signals)):
                 # Nothing matched but the default, and the command only looks: don't make a person approve `ls`.
                 decision, reason, rule_id = "allow", "Only reads (like ls, cat, grep, git status), so it runs without asking", \
                     "command:read_only"

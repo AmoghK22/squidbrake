@@ -231,6 +231,9 @@ def test_command_checks(c, monkeypatch):
     monkeypatch.setitem(server.policy.commands, "read_only", "allow")
     d = post("git status && ls")
     assert d["decision"] == "allow" and d["rule_id"] == "command:read_only"
+    monkeypatch.setitem(server.policy.history, "duplicate_change", "warn")
+    assert post("git status && ls")["decision"] == "allow"            # the same look again is not a duplicate change
+    monkeypatch.setitem(server.policy.history, "duplicate_change", "off")
     assert post("python build.py")["decision"] == "review"
     assert post("ls > listing.txt")["decision"] == "review"
     monkeypatch.setitem(server.policy.commands, "read_only", "off")
