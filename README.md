@@ -43,7 +43,8 @@ See [SHOWCASE.md](SHOWCASE.md) for a 5-minute demo with a sandbox company.
 
 Click the button and the live demo starts in your browser (free with a GitHub account): a sandbox company's AI
 support agent works its inbox while you watch. A scam wire is blocked, refunds wait for a person, and a demo
-manager approves or rejects them. On your own machine: `pip install -r requirements.txt` then `python demo/live_demo.py`.
+manager approves or rejects them. If the editor asks whether to allow tasks that run automatically, click
+**Allow**: that's the demo starting. On your own machine: `pip install -r requirements.txt` then `python demo/live_demo.py`.
 
 ## Try it in 30 seconds
 
