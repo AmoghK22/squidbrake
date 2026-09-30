@@ -70,7 +70,7 @@ def settings_path(project: str | None) -> Path:
 def strip_ours(settings: dict) -> dict:
     """Remove hook entries this script added earlier (so re-running doesn't duplicate them)."""
     hooks = settings.get("hooks", {})
-    for event in ("PreToolUse", "PostToolUse"):
+    for event in ("PreToolUse", "PostToolUse", "UserPromptSubmit"):
         groups = []
         for g in hooks.get(event, []):
             g["hooks"] = [h for h in g.get("hooks", []) if "claude_hook.py" not in json.dumps(h)]
@@ -129,6 +129,8 @@ def claude_code(args) -> None:
     hooks = settings.setdefault("hooks", {})
     hooks.setdefault("PreToolUse", []).append({"matcher": "*", "hooks": [{**hook_cmd, "timeout": 600}]})
     hooks.setdefault("PostToolUse", []).append({"matcher": "*", "hooks": [{**hook_cmd, "timeout": 30}]})
+    # what you ask, so the gateway can tell what came from you and what came from a web page or an email
+    hooks.setdefault("UserPromptSubmit", []).append({"hooks": [{**hook_cmd, "timeout": 15}]})
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         shutil.copy2(path, path.with_name(f"settings.json.bak-{time.strftime('%Y%m%d-%H%M%S')}"))

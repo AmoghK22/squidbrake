@@ -7,6 +7,8 @@ through Squidbrake before it runs, and reports the result afterwards.
   held for approval       -> Claude Code waits (up to ~9 minutes) until someone approves / rejects it
                              in the dashboard
 
+It also records what you ask (UserPromptSubmit), so the gateway can tell addresses you gave from ones a web page gave.
+
 Install it with:  python connect.py claude-code
 Settings (env vars, set by connect.py in the hook command):
   GATEWAY_URL, GATEWAY_API_KEY, GATEWAY_SOURCE (default "claude-code"),
@@ -108,6 +110,18 @@ def post(ev: dict, http: httpx.Client) -> None:
         pass  # the tool already ran; never fail Claude Code because reporting failed
 
 
+def prompt(ev: dict, http: httpx.Client) -> None:
+    """Record what the user asked. Never blocks the prompt: if the gateway is down, Claude Code carries on."""
+    text = ev.get("prompt")
+    if not text:
+        return
+    try:
+        http.post("/v1/events", json={"name": "user.prompt", "kind": "prompt", "input": {"prompt": text},
+                                      "output": {"recorded": True}, "source": SOURCE, "session_id": ev.get("session_id")})
+    except httpx.HTTPError:
+        pass
+
+
 def main() -> None:
     try:
         ev = json.load(sys.stdin)
@@ -120,6 +134,8 @@ def main() -> None:
             pre(ev, http)
         elif ev.get("hook_event_name") == "PostToolUse":
             post(ev, http)
+        elif ev.get("hook_event_name") == "UserPromptSubmit":
+            prompt(ev, http)
     sys.exit(0)
 
 

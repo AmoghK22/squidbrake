@@ -21,6 +21,8 @@ Free and open source (Apache 2.0). Runs on your laptop or your own server; your 
 - **Reads what a command really does:** `ls && rm -rf ~/`, `bash -c "..."`, `rmdir /s /q d:\` or `curl ... | sh` are
   split and read before they run. Wiping a disk or home folder is blocked; `git push --force`, `terraform destroy`,
   `kubectl delete` or cloud deletes wait for a person; commands that only look (`ls`, `git status`) run without asking.
+- **Catches prompt injection without a model:** if an agent sends data to an address that only a web page, email or
+  issue mentioned (not you, not your own systems), it's held and the approver is told where the address came from.
 - **Judges by history:** blocks a retry of something a person rejected, catches look-alike domains
   (`acrne-corp.com` pretending to be `acme.com`), flags duplicate refunds, and lets you write sequence rules
   ("deleting a database right after its backups were turned off") that say which earlier step caused them.
@@ -176,6 +178,20 @@ Shell tools (Claude Code's `Bash` and `PowerShell`, or any tool matching `comman
 
 Command checks apply even when a rule allows the tool, and `read_only: allow` only relaxes the `default` (never a
 rule or a warning). Configure them under `command_checks:` in `rules.yaml`.
+
+## Prompt injection, caught without a model
+
+The attacks that actually happened to agents (a GitHub issue, a support ticket or a web page telling the agent to send
+data somewhere) share one shape: the destination comes from content someone else wrote. Squidbrake records what you
+ask (Claude Code prompts, via the hook) and which tools bring in outside content (`WebFetch`, inboxes, issues,
+tickets...). When an action sends something to an email address, URL, bank account or repo that appears in that
+outside content but not in what you asked or in your own systems' results, it's held with the reason:
+
+> This sends to keys@evil.io (to), which appears in WebFetch (2 minutes ago) but not in anything you asked or in your
+> own systems. Content from outside can carry hidden instructions (prompt injection).
+
+Uploads from the shell count too (`curl -d @.env https://...`, `scp`, `git push`). Anything sent out after outside
+content was read gets a warning for the approver. Configure it under `taint_checks:` in `rules.yaml`.
 
 ## Sequence rules
 

@@ -58,6 +58,18 @@ command_checks:
   read_only: allow        # commands that only look (ls, cat, grep, git status/log/diff) run without asking,
                           # unless a rule below says otherwise. Set to off to approve those too.
 
+# Taint checks catch prompt injection without a model: content someone else wrote (a web page, an email, an issue)
+# says "send X to <attacker>", and the agent does. When an action sends something to a destination (email address,
+# URL, bank account, repo) that appears in that outside content but NOT in what the user asked (Claude Code prompts
+# are recorded) or in your own tools' results, it came from the outside content.
+taint_checks:
+  untrusted_destination: review   # sends to an address/URL/account found only in outside content
+  after_untrusted: warn           # sends anything out after outside content was read in this conversation
+  lookback_hours: 24
+  # untrusted: [...]  tools whose results are outside content (defaults: WebFetch, *fetch*, *inbox*, *issue*, *ticket* ...)
+  # sinks: [...]      tools that send things out (defaults: *send*, *reply*, *publish*, *transfer*, *webhook*, *upload* ...)
+  #                   Shell commands count as sinks when they upload (curl -d, scp, git push, ...).
+
 # Sequence rules judge an action by what came BEFORE it, and say which earlier step caused it.
 #   match   this action (same fields as rules: name, source, input_regex, input, ...)
 #   after   an earlier step in the same conversation that went ahead, within within_hours (default 24);

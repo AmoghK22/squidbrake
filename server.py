@@ -59,6 +59,7 @@ from sqlalchemy import (
 )
 
 import commands
+import taint
 import verify
 
 # --------------------------------------------------------------------------- config
@@ -511,6 +512,23 @@ HISTORY_DEFAULTS = {
     "duplicate_change": "review",           # the same change on the same target again (e.g. a 2nd refund)
 }
 
+# Taint checks (rules.yaml `taint_checks:`): where is this action sending things, and did that come from content
+# someone else wrote (a web page, an email, an issue) rather than from the user or the company's own systems?
+TAINT_EFFECT_KEYS = ("untrusted_destination", "after_untrusted")
+TAINT_DEFAULTS = {
+    "untrusted": ["WebFetch", "WebSearch", "*fetch*", "*browse*", "*scrape*", "*crawl*", "*web_search*", "*search_web*",
+                  "*inbox*", "*read_email*", "*email_read*", "*get_email*", "*mail*read*", "*read*mail*", "*get_message*",
+                  "*read_message*", "*message_read*", "*issue*", "*ticket*", "*comment*", "*pull_request*",
+                  "*channel*history*", "*conversations*history*", "*download*", "*http_get*"],
+    "sinks": ["*send*", "*reply*", "*forward*", "*_post*", "*post_*", "*.post*", "*publish*", "*add_comment*",
+              "*create_comment*", "*comment_create*", "*create_issue*", "*issue_create*", "*create_pull*",
+              "*pull_request_create*", "*pr_create*", "*transfer*", "*wire*", "*payout*", "*refund*", "*payment*create*",
+              "*webhook*", "*upload*", "*share*", "*invite*", "*http_request*"],
+    "lookback_hours": 24,
+    "untrusted_destination": "review",  # sends to an address/URL/account found only in untrusted content
+    "after_untrusted": "warn",          # sends anything out after untrusted content was read in this conversation
+}
+
 # Command checks (rules.yaml `command_checks:`) read what a shell command actually does (see commands.py).
 COMMAND_EFFECT_KEYS = ("catastrophic", "irreversible", "hidden")
 COMMAND_DEFAULTS = {
@@ -620,6 +638,7 @@ class Policy:
         self.rules: list[dict] = []
         self.history: dict = dict(HISTORY_DEFAULTS)
         self.commands: dict = dict(COMMAND_DEFAULTS)
+        self.taint: dict = dict(TAINT_DEFAULTS)
         self.sequences: list[dict] = []
         self.source, self.fingerprint = "", verify.rules_fingerprint("")
         self.mode, self.shadow_agents = "enforce", []
@@ -672,13 +691,20 @@ class Policy:
                     raise ValueError("command_checks.read_only must be allow or off")
                 cc["tools"] = [cc["tools"]] if isinstance(cc["tools"], str) else list(cc["tools"] or [])
                 sequences = self._compile_sequences(data.get("sequences"))
+                tc = {**TAINT_DEFAULTS, **(data.get("taint_checks") or {})}
+                for k in TAINT_EFFECT_KEYS:
+                    tc[k] = "off" if tc[k] is False else TAINT_DEFAULTS[k] if tc[k] is True else str(tc[k]).lower()
+                    if tc[k] not in ("block", "review", "warn", "off"):
+                        raise ValueError(f"taint_checks.{k} must be block, review, warn or off")
+                for k in ("untrusted", "sinks"):
+                    tc[k] = [tc[k]] if isinstance(tc[k], str) else list(tc[k] or [])
                 mode = str(data.get("mode", "enforce")).lower()
                 if mode not in ("enforce", "shadow"):
                     raise ValueError("mode must be enforce or shadow")
                 shadow_agents = data.get("shadow_agents") or []
                 shadow_agents = [shadow_agents] if isinstance(shadow_agents, str) else list(shadow_agents)
                 self.default, self.rules, self.history, self.commands = default, rules, hc, cc
-                self.sequences = sequences
+                self.sequences, self.taint = sequences, tc
                 self.source, self.fingerprint = source, verify.rules_fingerprint(source)
                 self.mode, self.shadow_agents = mode, shadow_agents
                 self.default_reason = data.get("default_reason") or f"default {default}"
@@ -1012,6 +1038,63 @@ def sequence_signals(conn, ev: "EventIn", client: str) -> list[dict]:
     return out
 
 
+def _globbed(name: str | None, globs: list[str]) -> bool:
+    return any(fnmatch.fnmatchcase((name or "").lower(), g.lower()) for g in globs)
+
+
+def taint_signals(conn, ev: "EventIn", client: str) -> list[dict]:
+    """Does this action send something to a destination that only untrusted content mentioned? (see taint.py)"""
+    tc = policy.taint
+    if tc["untrusted_destination"] == "off" and tc["after_untrusted"] == "off":
+        return []
+    shell = _globbed(ev.name, policy.commands["tools"])
+    line = commands.command_of(ev.input) if shell else None
+    if shell:
+        if not taint.sends_out(line):
+            return []
+    elif not _globbed(ev.name, tc["sinks"]) or _globbed(ev.name, tc["untrusted"]):
+        return []
+    since = (datetime.now(timezone.utc) - timedelta(hours=float(tc["lookback_hours"]))).isoformat().replace("+00:00", "Z")
+    scope = events.c.session_id == ev.session_id if ev.session_id else and_(events.c.source == ev.source,
+                                                                            events.c.client == client)
+    rows = conn.execute(select(events.c.id, events.c.name, events.c.kind, events.c.input, events.c.output,
+                               events.c.created_at).where(scope, events.c.created_at >= since)
+                        .order_by(events.c.created_at.desc()).limit(300)).all()
+
+    def untrusted(r) -> bool:
+        if r.kind == "prompt":
+            return False
+        if _globbed(r.name, policy.commands["tools"]):        # a shell command that fetched something from outside
+            cmd = commands.command_of(json.loads(r.input)) if r.input else None
+            return bool(cmd and taint.UPLOAD_RE.search(cmd) and not taint.sends_out(cmd))
+        return _globbed(r.name, tc["untrusted"])
+
+    outside = [r for r in rows if r.output and untrusted(r)]
+    if not outside:
+        return []
+    trusted = [r.input for r in rows if r.kind == "prompt" and r.input] + \
+              [r.output for r in rows if r.output and r.kind != "prompt" and not untrusted(r)]
+    out: list[dict] = []
+    if tc["untrusted_destination"] != "off":
+        for dest in taint.destinations(ev.input, line):
+            if taint.own_domain(dest, policy.history["company_domains"]):
+                continue
+            hit = next((r for r in outside if taint.appears_in(dest, r.output)), None)
+            if hit and not any(taint.appears_in(dest, t) for t in trusted):
+                out.append({"check": "untrusted_destination", "effect": tc["untrusted_destination"], "ref": hit.id,
+                            "message": f"This sends to {dest['value']} ({dest['field']}), which appears in {hit.name} "
+                                       f"({_ago(hit.created_at)}) but not in anything you asked or in your own systems. "
+                                       "Content from outside can carry hidden instructions (prompt injection)."})
+                break
+    if not out and tc["after_untrusted"] != "off":
+        names = list(dict.fromkeys(r.name for r in outside))
+        out.append({"check": "after_untrusted", "effect": tc["after_untrusted"], "ref": outside[0].id,
+                    "message": f"Earlier in this conversation the agent read content from outside "
+                               f"({', '.join(names[:3])}{'...' if len(names) > 3 else ''}), and this sends something out. "
+                               "Check it's what you asked for."})
+    return out
+
+
 def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
     signals: list[dict] = []
     if stop := stopped_for(ev.source, client, ev.session_id):
@@ -1026,14 +1109,17 @@ def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
         if decision != "deny":
             command_found, only_reads = command_signals(ev.name, ev.input)
             with engine.connect() as conn:
-                # Most telling first: a sequence names the earlier step that caused it.
-                signals = sequence_signals(conn, ev, client) + command_found
+                # Most telling first: a sequence names the step that caused it; history checks are specific to
+                # the business (who asked for this payment); taint and command checks are more general.
+                signals = sequence_signals(conn, ev, client)
                 signals += history_signals(conn, ev.name, ev.input, to_stored_json(ev.input), ev.source,
                                            ev.session_id, is_change=decision == "review")
+                signals += taint_signals(conn, ev, client) + command_found
             blocking = next((s for s in signals if s["effect"] == "block"), None)
             needs_person = next((s for s in signals if s["effect"] == "review"), None)
             signal_id = lambda s: f"sequence:{s['rule']}" if s["check"] == "sequence" else \
-                f"command:{s['check']}" if s["check"].endswith("_command") else f"history:{s['check']}"
+                f"command:{s['check']}" if s["check"].endswith("_command") else \
+                f"taint:{s['check']}" if s["check"] in TAINT_EFFECT_KEYS else f"history:{s['check']}"
             if blocking and ev.output is None and ev.error is None:
                 decision, reason, rule_id = "deny", blocking["message"], signal_id(blocking)
             elif needs_person and decision == "allow":
