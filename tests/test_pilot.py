@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import pilot  # noqa: E402
 
-SECRET = "sk_live_DO_NOT_LEAK_7731"
+SECRET = "PLANTED-MARKER-not-a-real-secret"   # must never show up in what a pilot install sends
 
 
 @pytest.fixture(scope="module")
