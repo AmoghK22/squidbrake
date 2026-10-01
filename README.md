@@ -343,6 +343,13 @@ pip install pytest && pytest -q
 python tests/e2e_business_scenario.py
 ```
 
+## Usage sharing (pilots only)
+
+Squidbrake sends nothing anywhere by default. If you join a pilot with a code you were given
+(`squidbrake pilot join CODE --server URL`), it shows exactly what it will share and asks first: usage **counts**
+(actions allowed, held, approved, blocked per day; which agents and rules), never commands, code, prompts or keys.
+`squidbrake pilot leave` stops it. Details: [`pilot.py`](pilot.py) and [`insights/`](insights/).
+
 ## Roadmap
 
 - **Reach checks for AWS** ([#18](https://github.com/batrapulkit/squidbrake/issues/18), [design](docs/design/aws-reach-checks.md)):

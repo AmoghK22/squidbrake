@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Squidbrake Insights</title>
+<style>
+:root { --bg:#f6f6f4; --card:#fff; --ink:#18181b; --muted:#71717a; --line:#e4e4e7; --soft:#f4f4f5; --accent:#dc2626;
+        --ok:#16a34a; --warn:#d97706; --info:#2563eb; --bar:#6366f1; }
+@media (prefers-color-scheme: dark) { :root { --bg:#111114; --card:#1a1a1f; --ink:#f4f4f5; --muted:#a1a1aa; --line:#2e2e35;
+        --soft:#232329; --accent:#ef4444; --ok:#22c55e; --warn:#f59e0b; --info:#60a5fa; --bar:#818cf8; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+main { max-width:1200px; margin:0 auto; padding:24px 16px 60px; }
+header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+.brand { font-weight:800; font-size:20px; } .brand span { color:var(--accent); } .brand small { color:var(--muted); font-weight:500; }
+.spacer { flex:1; }
+button, input, textarea { font:inherit; color:inherit; }
+.btn { border:1px solid var(--line); background:var(--card); border-radius:9px; padding:7px 13px; cursor:pointer; }
+.btn.primary { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+a { color:var(--info); } a.btn { color:var(--ink); text-decoration:none; display:inline-block; }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:18px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+.card .k { color:var(--muted); font-size:13px; } .card .v { font-size:28px; font-weight:750; letter-spacing:-.02em; }
+.panel { background:var(--card); border:1px solid var(--line); border-radius:12px; margin-bottom:18px; }
+.panel h2 { font-size:16px; margin:0; padding:14px 16px; border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:center; }
+.table-wrap { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; min-width:900px; }
+th, td { text-align:left; padding:11px 14px; border-top:1px solid var(--line); vertical-align:top; }
+th { font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; border-top:0; }
+td.num { font-variant-numeric:tabular-nums; }
+.co { font-weight:650; } .sub { color:var(--muted); font-size:13px; }
+.stage { display:inline-block; border-radius:999px; padding:2px 10px; font-size:12.5px; font-weight:650; white-space:nowrap; }
+.s-active { background:color-mix(in srgb,var(--ok) 16%,transparent); color:var(--ok); }
+.s-installed { background:color-mix(in srgb,var(--info) 16%,transparent); color:var(--info); }
+.s-quiet, .s-opened { background:color-mix(in srgb,var(--warn) 16%,transparent); color:var(--warn); }
+.s-sent, .s-left { background:var(--soft); color:var(--muted); }
+.chip { display:inline-block; background:var(--soft); border-radius:6px; padding:1px 7px; margin:2px 3px 0 0; font-size:12.5px; }
+.chip.r { font-family:ui-monospace,Consolas,monospace; font-size:12px; }
+.spark { display:flex; align-items:flex-end; gap:2px; height:34px; }
+.spark i { display:block; width:7px; background:var(--bar); border-radius:2px 2px 0 0; min-height:1px; opacity:.85; }
+.mini { color:var(--muted); font-size:12.5px; margin-top:3px; }
+.mini b { color:var(--ink); }
+form.new { display:grid; grid-template-columns:2fr 2fr 3fr auto; gap:8px; padding:14px 16px; }
+form.new input { border:1px solid var(--line); background:var(--bg); border-radius:9px; padding:8px 10px; }
+.result { margin:0 16px 16px; padding:14px; border-radius:10px; background:var(--soft); display:none; }
+.result textarea { width:100%; min-height:150px; border:1px solid var(--line); border-radius:8px; padding:10px; background:var(--card); }
+.result .row { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+.empty { padding:30px 16px; color:var(--muted); text-align:center; }
+.login { max-width:420px; margin:12vh auto; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:24px; }
+.login input { width:100%; border:1px solid var(--line); background:var(--bg); border-radius:9px; padding:9px 11px; margin:10px 0; }
+.err { color:var(--accent); min-height:1.2em; font-size:14px; }
+.icon-btn { border:0; background:none; color:var(--muted); cursor:pointer; padding:2px 4px; }
+@media (max-width:720px) { form.new { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+const app = document.getElementById("app");
+const store = { get: () => { try { return localStorage.getItem("insightsKey") || ""; } catch { return ""; } },
+                set: (v) => { try { v ? localStorage.setItem("insightsKey", v) : localStorage.removeItem("insightsKey"); } catch {} } };
+let key = store.get();
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const api = async (path, opts = {}) => {
+  const r = await fetch(path, { ...opts, headers: { "X-Admin-Key": key, "Content-Type": "application/json", ...(opts.headers || {}) } });
+  if (r.status === 401) { store.set(""); key = ""; login("That key didn't work."); throw new Error("unauthorized"); }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
+};
+const ago = (iso) => {
+  if (!iso) return "never";
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`;
+};
+const STAGE = { "active": ["Active", "s-active"], "installed": ["Installed, no activity yet", "s-installed"],
+  "quiet": ["Gone quiet", "s-quiet"], "opened link": ["Opened the link", "s-opened"], "link sent": ["Link sent", "s-sent"],
+  "left": ["Left the pilot", "s-left"] };
+
+function login(msg = "") {
+  app.innerHTML = `<div class="login"><div class="brand">Squid<span>brake</span> <small>Insights</small></div>
+    <p class="sub">Your pilots, at a glance. Paste the admin key (INSIGHTS_ADMIN_KEY).</p>
+    <form id="lf"><input id="lk" type="password" placeholder="Admin key" autocomplete="current-password" autofocus>
+    <button class="btn primary" style="width:100%">Open</button><div class="err">${esc(msg)}</div></form></div>`;
+  document.getElementById("lf").onsubmit = (e) => { e.preventDefault(); key = document.getElementById("lk").value.trim(); store.set(key); load(); };
+}
+
+function message(company, link) {
+  return `Hi ${company} team! Here's Squidbrake, the brake for AI coding agents I mentioned.\n\n` +
+    `It checks every action your agent (Claude Code, Cursor, Antigravity...) takes before it runs: reading runs on its own, ` +
+    `changes wait for one click, and dangerous stuff (wiping folders, printing .env, dropping tables) is blocked. ` +
+    `It runs on your machine.\n\nSetup is ~3 minutes, everything is on this page:\n${link}\n\n` +
+    `It shares only usage counts with me (never your code or commands), so I can see what helps. ` +
+    `Would love your honest feedback after a few days of real work!`;
+}
+
+async function load() {
+  if (!key) return login();
+  let d;
+  try { d = await api("/v1/admin/overview"); } catch (e) { if (e.message !== "unauthorized") app.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+  const w = d.week;
+  app.innerHTML = `
+    <header><div class="brand">Squid<span>brake</span> <small>Insights</small></div><span class="spacer"></span>
+      <button class="btn" id="refresh">↻ Refresh</button><button class="btn" id="logout">Log out</button></header>
+    <div class="cards">
+      ${card("Pilots", d.pilots.length)}${card("Active now", d.active_pilots)}${card("Installs", d.installs)}
+      ${card("Actions, 7 days", w.events)}${card("Held for a person", w.held)}${card("Approved", w.approved)}
+      ${card("Blocked", w.blocked)}${card("Would block (shadow)", w.would_block)}
+    </div>
+    <section class="panel"><h2>New pilot</h2>
+      <form class="new" id="nf"><input id="nc" placeholder="Company (e.g. Acme)" required maxlength="80">
+        <input id="nk" placeholder="Contact (name, email, phone)" maxlength="120">
+        <input id="nn" placeholder="Note (how you met, what they build)" maxlength="500">
+        <button class="btn primary">Create link</button></form>
+      <div class="result" id="res"></div>
+    </section>
+    <section class="panel"><h2>Pilots</h2>
+      ${d.pilots.length ? `<div class="table-wrap"><table><thead><tr><th>Company</th><th>Stage</th><th>Last 14 days</th>
+        <th>7 days</th><th>Agents</th><th>What fired</th><th></th></tr></thead><tbody>${d.pilots.map(row).join("")}</tbody></table></div>`
+        : `<div class="empty">No pilots yet. Create a link above and send it to a founder.</div>`}
+    </section>
+    <p class="sub">Counts only: Squidbrake never sends commands, code, prompts or tool inputs here. Refreshes every minute.</p>`;
+  document.getElementById("refresh").onclick = load;
+  document.getElementById("logout").onclick = () => { store.set(""); key = ""; login(); };
+  document.getElementById("nf").onsubmit = create;
+  document.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
+    if (!confirm(`Delete the pilot ${b.dataset.del} and its stats? Its link stops working.`)) return;
+    await api(`/v1/admin/pilots/${encodeURIComponent(b.dataset.del)}`, { method: "DELETE" }); load();
+  });
+  document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = () => copy(b.dataset.copy, b));
+}
+
+const card = (k, v) => `<div class="card"><div class="k">${k}</div><div class="v">${Number(v || 0).toLocaleString()}</div></div>`;
+
+function row(p) {
+  const [label, cls] = STAGE[p.stage] || [p.stage, "s-sent"];
+  const max = Math.max(1, ...p.daily);
+  const spark = `<div class="spark" title="Actions per day, last 14 days">${p.daily.map((v) => `<i style="height:${Math.max(1, (v / max) * 34)}px" title="${v}"></i>`).join("")}</div>`;
+  const w = p.week;
+  const agents = Object.entries(p.agents).map(([a, n]) => `<span class="chip">${esc(a)} · ${n}</span>`).join("") || `<span class="sub">none yet</span>`;
+  const hits = Object.entries(p.rules_hit).map(([r, n]) => `<span class="chip r">${esc(r)} · ${n}</span>`).join("") || `<span class="sub">nothing</span>`;
+  return `<tr><td><div class="co">${esc(p.company)}</div><div class="sub">${esc(p.contact || "")}</div>
+      <div class="sub">${esc(p.note || "")}</div><div class="mini">code <b>${esc(p.code)}</b> · link opened ${p.page_views}×</div></td>
+    <td><span class="stage ${cls}">${label}</span><div class="mini">last seen ${ago(p.last_seen)}</div>
+      <div class="mini">${p.installs} install${p.installs === 1 ? "" : "s"}${p.versions.length ? " · v" + esc(p.versions.join(", ")) : ""}${p.modes.includes("shadow") ? " · shadow" : ""}</div></td>
+    <td>${spark}<div class="mini"><b>${p.total_events.toLocaleString()}</b> actions all time</div></td>
+    <td class="num"><div><b>${w.events}</b> actions</div><div class="mini">${w.held} held · ${w.approved} approved · ${w.rejected} rejected</div>
+      <div class="mini">${w.blocked} blocked${w.would_block ? ` · ${w.would_block} would block` : ""}${w.timed_out ? ` · ${w.timed_out} timed out` : ""}</div></td>
+    <td>${agents}</td><td>${hits}</td>
+    <td><button class="btn" data-copy="${esc(p.link)}">Copy link</button>
+      <button class="icon-btn" title="Delete pilot" data-del="${esc(p.code)}">✕</button></td></tr>`;
+}
+
+async function create(e) {
+  e.preventDefault();
+  const company = document.getElementById("nc").value.trim();
+  const r = await api("/v1/admin/pilots", { method: "POST", body: JSON.stringify({ company,
+    contact: document.getElementById("nk").value.trim(), note: document.getElementById("nn").value.trim() }) });
+  const msg = message(company, r.link);
+  await load();                                   // the new pilot shows in the table; then show its link
+  const res = document.getElementById("res");
+  res.style.display = "block";
+  res.innerHTML = `<div><b>Link for ${esc(company)}:</b> <a href="${esc(r.link)}" target="_blank" rel="noopener">${esc(r.link)}</a></div>
+    <p class="sub">A message you can send (edit as you like):</p><textarea id="msg">${esc(msg)}</textarea>
+    <div class="row"><button class="btn primary" id="cm">Copy message</button><button class="btn" id="cl">Copy link</button>
+    <a class="btn" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Open in WhatsApp</a></div>`;
+  document.getElementById("cm").onclick = (ev) => copy(document.getElementById("msg").value, ev.target);
+  document.getElementById("cl").onclick = (ev) => copy(r.link, ev.target);
+}
+
+async function copy(text, btn) {
+  try { await navigator.clipboard.writeText(text); const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = t), 1400); }
+  catch { prompt("Copy this:", text); }
+}
+
+load();
+setInterval(() => { if (key && !document.getElementById("res")?.style.display.includes("block")) load(); }, 60000);
+</script>
+</body>
+</html>

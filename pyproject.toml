@@ -56,6 +56,7 @@ packages = ["squidbrake"]
 "server.py" = "squidbrake/server.py"
 "commands.py" = "squidbrake/commands.py"
 "taint.py" = "squidbrake/taint.py"
+"pilot.py" = "squidbrake/pilot.py"
 "verify.py" = "squidbrake/verify.py"
 "connect.py" = "squidbrake/connect.py"
 "claude_hook.py" = "squidbrake/claude_hook.py"
@@ -69,6 +70,6 @@ packages = ["squidbrake"]
 "approve.html" = "squidbrake/approve.html"
 
 [tool.hatch.build.targets.sdist]
-only-include = ["squidbrake", "server.py", "commands.py", "taint.py", "verify.py", "connect.py", "claude_hook.py",
+only-include = ["squidbrake", "server.py", "commands.py", "taint.py", "pilot.py", "verify.py", "connect.py", "claude_hook.py",
                 "gw_async.py", "gateway_proxy.py", "gateway_mcp.py", "demo_apps_mcp.py", "client.py", "rules.yaml",
                 "dashboard.html", "approve.html", "README.md", "LICENSE", "pyproject.toml"]

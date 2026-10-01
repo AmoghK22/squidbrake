@@ -1,0 +1,40 @@
+#!/usr/bin/env sh
+# Squidbrake installer for macOS / Linux.
+#   curl -fsSL <server>/install.sh | sh
+# With SQUIDBRAKE_PILOT and SQUIDBRAKE_PILOT_SERVER set, it also offers to join that pilot (it asks first).
+set -e
+printf '\nInstalling Squidbrake (brakes for AI agents)...\n\n'
+
+PY=$(command -v python3 || command -v python || true)
+if [ -z "$PY" ] || ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
+  echo "Python 3.10 or newer is needed: https://www.python.org/downloads/ (macOS: brew install python)"
+  exit 1
+fi
+
+if command -v pipx >/dev/null 2>&1; then
+  PIPX="pipx"
+elif command -v brew >/dev/null 2>&1; then
+  brew install pipx >/dev/null && PIPX="pipx"
+else
+  "$PY" -m pip install --user --quiet pipx 2>/dev/null || "$PY" -m pip install --user --quiet --break-system-packages pipx
+  PIPX="$PY -m pipx"
+fi
+(cd /tmp && $PIPX install --force squidbrake && $PIPX ensurepath >/dev/null 2>&1 || true)
+
+SB="$HOME/.local/bin/squidbrake"
+[ -x "$SB" ] || SB="squidbrake"
+printf '\nInstalled: %s\n' "$("$SB" --version)"
+
+if [ -n "$SQUIDBRAKE_PILOT" ] && [ -n "$SQUIDBRAKE_PILOT_SERVER" ]; then
+  "$SB" pilot join "$SQUIDBRAKE_PILOT" --server "$SQUIDBRAKE_PILOT_SERVER" </dev/tty
+fi
+
+cat <<'EOF'
+
+Next:
+  1. Open a new terminal (so the 'squidbrake' command is found) and run:  squidbrake
+     It prints your keys (save them) and opens the dashboard. Keep that window open.
+  2. In another terminal, connect Claude Code:  squidbrake connect claude-code
+  3. Restart Claude Code and work as usual. Watch it at http://localhost:8080/dashboard
+
+EOF

@@ -59,6 +59,7 @@ from sqlalchemy import (
 )
 
 import commands
+import pilot
 import taint
 import verify
 
@@ -96,6 +97,19 @@ MAX_PAYLOAD_CHARS = int(os.getenv("MAX_PAYLOAD_CHARS", "65536"))
 RETENTION_DAYS = int(os.getenv("RETENTION_DAYS", "0"))  # 0 = keep forever
 PROXY_TIMEOUT = float(os.getenv("PROXY_TIMEOUT", "60"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+
+def _version() -> str:
+    try:
+        from importlib.metadata import version
+        return version("squidbrake")
+    except Exception:
+        m = re.search(r'__version__ = "([^"]+)"', (BASE_DIR / "squidbrake" / "__init__.py").read_text()
+                      if (BASE_DIR / "squidbrake" / "__init__.py").exists() else "")
+        return m.group(1) if m else "dev"
+
+
+VERSION = _version()
 
 
 def _parse_api_keys(raw: str) -> dict[str, str]:
@@ -1507,6 +1521,9 @@ async def lifespan(app: FastAPI):
     tasks = [asyncio.create_task(_expiry_loop()), asyncio.create_task(_digest_loop())]
     if RETENTION_DAYS > 0:
         tasks.append(asyncio.create_task(_retention_loop()))
+    # usage counts for the pilot programme: does nothing unless this install joined one (squidbrake pilot join)
+    tasks.append(asyncio.create_task(pilot.loop(HOME_DIR, lambda: pilot.usage(
+        engine, events, policy.mode, len(policy.rules), VERSION))))
     yield
     for t in tasks:
         t.cancel()
@@ -2194,6 +2211,9 @@ def print_banner(url: str | None, created: dict[str, str] | None) -> None:
             f"  More keys:  {CLI} add-key NAME            (for an agent)",
             f"              {CLI} add-key NAME --approver (for a person)",
         ]
+    if url and (p := pilot.load(HOME_DIR)):
+        lines += ["", f"  Pilot:      sharing usage counts (never commands or content) with {p['server']}",
+                  f"              stop anytime: {CLI} pilot leave"]
     lines += [bar, ""]
     print("\n".join(lines), flush=True)
 
@@ -2286,12 +2306,26 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("keys", help="list keys")
     v = sub.add_parser("verify", help="check an evidence file offline (same as: python verify.py FILE)")
     v.add_argument("file")
+    pl = sub.add_parser("pilot", help="join or leave a pilot: share usage counts (never content) with the Squidbrake team")
+    pl.add_argument("action", choices=["join", "leave", "status"])
+    pl.add_argument("code", nargs="?", help="the pilot code you were given (join)")
+    pl.add_argument("--server", help="the pilot server you were given (join)")
+    pl.add_argument("--yes", action="store_true", help="don't ask before joining")
     argv = sys.argv[1:] if argv is None else argv
     if not argv or (argv[0].startswith("-") and argv[0] not in ("-h", "--help")):
         argv = ["run", *argv]  # `python server.py --port 9000` means run
     args = p.parse_args(argv)
     return {"run": _cli_run, "init": _cli_init, "add-key": _cli_add_key, "remove-key": _cli_remove_key,
-            "keys": _cli_keys, "verify": lambda a: verify.main([a.file])}[args.cmd](args)
+            "keys": _cli_keys, "verify": lambda a: verify.main([a.file]), "pilot": _cli_pilot}[args.cmd](args)
+
+
+def _cli_pilot(args) -> int:
+    if args.action == "join":
+        if not args.code:
+            print("usage: pilot join CODE --server URL", file=sys.stderr)
+            return 2
+        return pilot.join(HOME_DIR, args.code, args.server, args.yes, VERSION)
+    return pilot.leave(HOME_DIR) if args.action == "leave" else pilot.status(HOME_DIR)
 
 
 if __name__ == "__main__":

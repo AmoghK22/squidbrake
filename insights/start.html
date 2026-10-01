@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get started with Squidbrake</title>
+<style>
+:root { --bg:#fafaf9; --card:#fff; --ink:#18181b; --muted:#71717a; --line:#e4e4e7; --code:#f4f4f5; --accent:#dc2626;
+        --ok:#16a34a; --warn:#b45309; }
+@media (prefers-color-scheme: dark) { :root { --bg:#111114; --card:#1a1a1f; --ink:#f4f4f5; --muted:#a1a1aa; --line:#2e2e35;
+        --code:#232329; --accent:#ef4444; --ok:#22c55e; --warn:#f59e0b; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+main { max-width:760px; margin:0 auto; padding:40px 16px 64px; }
+.brand { font-weight:800; font-size:20px; letter-spacing:-.01em; }
+.brand span { color:var(--accent); }
+h1 { font-size:32px; line-height:1.2; margin:18px 0 8px; letter-spacing:-.02em; }
+.lead { color:var(--muted); margin:0 0 28px; font-size:17px; }
+.step { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px 20px 18px; margin:0 0 14px; }
+.step h2 { font-size:18px; margin:0 0 6px; display:flex; gap:10px; align-items:center; }
+.n { display:inline-grid; place-items:center; width:26px; height:26px; border-radius:50%; background:var(--accent); color:#fff;
+     font-size:14px; flex:none; }
+.step p { margin:6px 0; color:var(--muted); }
+.tabs { display:flex; gap:6px; margin:10px 0 8px; }
+.tabs button { border:1px solid var(--line); background:var(--code); color:var(--ink); border-radius:999px; padding:5px 12px;
+               font:inherit; font-size:14px; cursor:pointer; }
+.tabs button[aria-selected="true"] { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+.cmd { position:relative; background:var(--code); border:1px solid var(--line); border-radius:10px; margin:8px 0;
+       padding:12px 84px 12px 14px; font:14px/1.5 ui-monospace,"Cascadia Code",Consolas,monospace; overflow-x:auto;
+       white-space:pre-wrap; word-break:break-all; }
+.copy { position:absolute; top:8px; right:8px; border:1px solid var(--line); background:var(--card); color:var(--ink);
+        border-radius:8px; padding:4px 10px; font:13px system-ui,sans-serif; cursor:pointer; }
+.note { font-size:14px; }
+.privacy { border-left:4px solid var(--ok); }
+.privacy ul { margin:8px 0 0; padding-left:20px; color:var(--muted); }
+.privacy li b { color:var(--ink); }
+.try li { margin:4px 0; }
+.foot { color:var(--muted); font-size:14px; margin-top:26px; }
+code { background:var(--code); padding:1px 6px; border-radius:6px; font-size:.92em; }
+a { color:var(--accent); }
+.missing { text-align:center; margin-top:80px; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+const D = __DATA__;
+const app = document.getElementById("app");
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+if (D.missing) {
+  app.innerHTML = `<div class="missing"><div class="brand">Squid<span>brake</span></div>
+    <h1>This link isn't valid</h1><p class="lead">Check the link you were sent, or ask the person who sent it.</p></div>`;
+} else {
+  const win = `$env:SQUIDBRAKE_PILOT="${D.code}"; $env:SQUIDBRAKE_PILOT_SERVER="${D.server}"; irm ${D.server}/install.ps1 | iex`;
+  const mac = `curl -fsSL ${D.server}/install.sh | SQUIDBRAKE_PILOT=${D.code} SQUIDBRAKE_PILOT_SERVER=${D.server} sh`;
+  const manual = `pipx install squidbrake\nsquidbrake pilot join ${D.code} --server ${D.server}`;
+  app.innerHTML = `
+    <div class="brand">Squid<span>brake</span></div>
+    <h1>Hi ${esc(D.company)}, let's put a brake on your AI agents</h1>
+    <p class="lead">Squidbrake checks every action your agent takes before it runs. Reading code runs on its own,
+      changes wait for your OK, and dangerous commands (wiping a folder, printing your <code>.env</code>, dropping a table)
+      are blocked. It runs on your machine. Setup takes about 3 minutes.</p>
+
+    <section class="step"><h2><span class="n">1</span> Install</h2>
+      <p>Paste this into a terminal. It needs Python 3.10+.</p>
+      <div class="tabs" role="tablist">
+        <button role="tab" data-os="win">Windows (PowerShell)</button><button role="tab" data-os="mac">macOS / Linux</button>
+        <button role="tab" data-os="manual">Manual</button></div>
+      <div class="cmd" id="installCmd"></div>
+      <p class="note">It installs Squidbrake and asks whether you'd like to join the pilot (see "What we see" below).</p>
+    </section>
+
+    <section class="step"><h2><span class="n">2</span> Start it</h2>
+      <p>Open a <b>new</b> terminal window and run:</p>
+      <div class="cmd">squidbrake</div>
+      <p class="note">It prints two keys (save them: they're shown once) and opens your dashboard at
+        <code>http://localhost:8080/dashboard</code>. Paste the <b>admin</b> key there. Keep this window open while you work.</p>
+    </section>
+
+    <section class="step"><h2><span class="n">3</span> Connect your agent</h2>
+      <p><b>Claude Code</b>: in another terminal window:</p>
+      <div class="cmd">squidbrake connect claude-code</div>
+      <p class="note">Then restart Claude Code. Every tool call (commands, edits, web fetches) now goes through Squidbrake.</p>
+      <p><b>Cursor, Antigravity, Claude Desktop</b>: <code>squidbrake connect mcp --name cursor</code> prints the config to
+        paste (Antigravity: add <code>--install</code> and it's done for you). These guard the tools you route through
+        Squidbrake; the IDE's own terminal isn't covered yet.</p>
+    </section>
+
+    <section class="step try"><h2><span class="n">4</span> Use it as usual, and try these</h2>
+      <ul>
+        <li>Ask your agent to <b>fix a failing test</b>: reading runs on its own; each change waits in the dashboard for one click.</li>
+        <li>Ask it to <b>print your .env file</b>: blocked, and the agent is told why.</li>
+        <li>Ask it to <b>force-push</b> or <b>delete a folder</b>: held for you, with a warning.</li>
+        <li>Want it quieter at first? Shadow mode records what it <i>would</i> have blocked without blocking anything:
+          set <code>mode: shadow</code> at the top of <code>~/.squidbrake/rules.yaml</code>.</li>
+      </ul>
+    </section>
+
+    <section class="step privacy"><h2>What we see (and what we never see)</h2>
+      <p>Only if you join the pilot in step 1. We see <b>counts</b>, so we can tell what's useful:</p>
+      <ul>
+        <li><b>Sent:</b> Squidbrake version, OS, which agents are connected (e.g. "claude-code"), and per day how many actions
+          were allowed, held, approved, rejected or blocked, and which rules fired.</li>
+        <li><b>Never sent:</b> your commands, code, files, prompts, tool inputs or outputs, keys, or anyone's names.
+          Your agents' activity stays on your machine.</li>
+        <li><b>Stop anytime:</b> <code>squidbrake pilot leave</code>. The code that sends it is open source.</li>
+      </ul>
+    </section>
+
+    <p class="foot">Stuck? ${D.contact ? "Reach me: " + esc(D.contact) + "." : "Reply to the message this link came in."}
+      To undo everything: <code>squidbrake connect claude-code --remove</code>, then <code>pipx uninstall squidbrake</code>.
+      Squidbrake is free and open source (Apache 2.0).</p>`;
+
+  const cmds = { win, mac, manual };
+  const box = document.getElementById("installCmd");
+  const show = (os) => {
+    document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.os === os)));
+    box.textContent = cmds[os]; addCopy(box);
+  };
+  document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.os)));
+  show(/Mac|Linux|X11/.test(navigator.userAgent) && !/Windows/.test(navigator.userAgent) ? "mac" : "win");
+  document.querySelectorAll(".cmd").forEach(addCopy);
+}
+
+function addCopy(el) {
+  el.querySelector(".copy")?.remove();
+  const text = el.textContent;
+  const b = document.createElement("button");
+  b.className = "copy"; b.textContent = "Copy";
+  b.onclick = async () => {
+    try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; }
+    catch { b.textContent = "Select & copy"; }
+    setTimeout(() => (b.textContent = "Copy"), 1500);
+  };
+  el.appendChild(b);
+}
+</script>
+</body>
+</html>
