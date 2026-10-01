@@ -10,7 +10,7 @@ python incidents/replay.py        # throwaway database; touches nothing else
 
 | Incident | When | What the agent did | What Squidbrake does |
 |---|---|---|---|
-| [Claude Code deletes a home folder](https://github.com/anthropics/claude-code/issues/10077) | Dec 2025 | `rm -rf tests/ patches/ plan/ ~/` | **Blocks it**: *"This command deletes your home folder"*, even though the dangerous part is the last argument |
+| [Claude Code deletes a home folder](https://www.docker.com/blog/coding-agent-horror-stories-the-rm-rf-incident/) | Dec 2025 | `rm -rf tests/ patches/ plan/ ~/` | **Blocks it**: *"This command deletes your home folder"*, even though the dangerous part is the last argument |
 | [Antigravity wipes a D: drive](https://www.howtogeek.com/google-antigravity-ide-deleted-someones-entire-drive/) | Dec 2025 | `rmdir /s /q d:\` in auto-execute mode | **Blocks it**: *"This command deletes a whole drive"* |
 | [Replit deletes a production database](https://fortune.com/2025/07/23/ai-coding-tool-replit-wiped-database-called-it-a-catastrophic-failure/) | Jul 2025 | Destructive SQL on production during a code freeze | **Holds it for a person**: *"This command runs destructive SQL (DELETE FROM executives)"* |
 | [A coding agent deletes a production volume and its backups](https://www.theregister.com/software/2026/04/27/cursor-opus-agent-snuffs-out-startups-production-database/5224442) | Apr 2026 | Found a token in the repo and called Railway's `volumeDelete` API | **Holds it for a person**: *"This command sends an API request that deletes something"* |
