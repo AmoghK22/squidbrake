@@ -351,6 +351,16 @@ def caddy_ask(domain: str = ""):
     return {"ok": True}
 
 
+@app.get("/v1/pilot/{code}/status")
+def pilot_status(code: str):
+    """Polled by the start page while a hosted dashboard is being set up."""
+    with db() as c:
+        p = c.execute("SELECT state, admin_key, keys_revealed_at FROM pilots WHERE code=? AND hosted=1", (code,)).fetchone()
+    if not p:
+        raise HTTPException(404)
+    return {"state": p["state"], "keys_ready": bool(p["admin_key"]), "keys_shown": bool(p["keys_revealed_at"])}
+
+
 @app.post("/v1/pilot/{code}/keys")
 def reveal_keys(code: str):
     """The founder's keys for their hosted gateway, shown once on their start page and then forgotten here."""
@@ -398,8 +408,16 @@ def overview(request: Request):
         stage = ("left" if mine and not active else "active" if seen_within(last, 48) and week["events"] else
                  "quiet" if last else "installed" if active else "opened link" if p["page_views"] else "link sent")
         keys_waiting = bool(p.pop("admin_key", None)); p.pop("agent_key", None)   # never sent to the browser
-        if p["hosted"] and p["state"] != "running" and stage in ("link sent", "opened link"):
-            stage = {"requested": "setting up", "failed": "setup failed", "deleting": "deleting"}.get(p["state"], stage)
+        if p["hosted"]:
+            # a hosted gateway reports on its own from the start, so the founder's progress is: opened the link ->
+            # took their keys -> their agent's actions arrive
+            ever = sum(i["total_events"] or 0 for i in mine)
+            if p["state"] != "running":
+                stage = {"requested": "setting up", "failed": "setup failed", "deleting": "deleting"}.get(p["state"], stage)
+            elif not p["keys_revealed_at"]:
+                stage = "opened link" if p["page_views"] else "link sent"
+            elif not ever:
+                stage = "keys taken"
         out.append({**p, "dashboard": dashboard_url(p["subdomain"]), "keys_waiting": keys_waiting,
                     "link": f"{public_url(request)}/start/{p['code']}", "stage": stage, "installs": len(active),
                     "last_seen": last or None, "versions": sorted({i["version"] for i in active if i["version"]}),

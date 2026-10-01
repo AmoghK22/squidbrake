@@ -29,8 +29,11 @@ if [ -n "$SQUIDBRAKE_URL" ] && [ -n "$SQUIDBRAKE_AGENT_KEY" ]; then
   # a hosted dashboard: nothing to run locally, just route Claude Code through it
   case "$SQUIDBRAKE_AGENT_KEY" in *YOUR_AGENT_KEY*)
     echo "Put your agent key (from your start page) in place of gw_YOUR_AGENT_KEY and run it again."; exit 1 ;; esac
-  "$SB" connect claude-code --url "$SQUIDBRAKE_URL" --key "$SQUIDBRAKE_AGENT_KEY" --yes --hook-only
-  printf '\nDone. Restart Claude Code and work as usual. Your dashboard: %s/dashboard\n\n' "$SQUIDBRAKE_URL"
+  if ! curl -fsS -m 20 -H "X-Gateway-Key: $SQUIDBRAKE_AGENT_KEY" "$SQUIDBRAKE_URL/v1/me" >/dev/null; then
+    echo "Couldn't reach your dashboard with that key. Check the key and run it again."; exit 1
+  fi
+  "$SB" connect claude-code --url "$SQUIDBRAKE_URL" --key "$SQUIDBRAKE_AGENT_KEY" --yes --hook-only >/dev/null
+  printf '\n  [OK] Connected to your dashboard.\n\nLast step: close and reopen Claude Code, then work as usual.\nYour dashboard: %s/dashboard\n\n' "$SQUIDBRAKE_URL"
   exit 0
 fi
 

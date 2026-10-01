@@ -9,6 +9,13 @@ foreach ($c in @("py", "python", "python3")) {
     $cmd = Get-Command $c -ErrorAction SilentlyContinue
     if ($cmd -and $cmd.Source -notlike "*WindowsApps*") { $py = $cmd.Source; break }
 }
+if (-not $py -and (Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Host "Python isn't installed: installing Python 3.12 with winget (a minute or two)..." -ForegroundColor Cyan
+    winget install --id Python.Python.3.12 --scope user --silent --accept-package-agreements --accept-source-agreements | Out-Null
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $cand = Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"
+    if (Test-Path $cand) { $py = $cand }
+}
 if (-not $py) {
     Write-Host "Python 3.10 or newer is needed. Install it from https://www.python.org/downloads/" -ForegroundColor Yellow
     Write-Host "(tick 'Add python.exe to PATH'), open a new PowerShell window, and run this again."
@@ -34,8 +41,16 @@ if ($env:SQUIDBRAKE_URL -and $env:SQUIDBRAKE_AGENT_KEY) {
         Write-Host "`nPut your agent key (from your start page) in place of gw_YOUR_AGENT_KEY and run it again." -ForegroundColor Yellow
         return
     }
-    & $sb connect claude-code --url $env:SQUIDBRAKE_URL --key $env:SQUIDBRAKE_AGENT_KEY --yes --hook-only
-    Write-Host "`nDone. Restart Claude Code and work as usual. Your dashboard: $($env:SQUIDBRAKE_URL)/dashboard`n" -ForegroundColor Green
+    try {
+        $me = Invoke-RestMethod "$($env:SQUIDBRAKE_URL)/v1/me" -Headers @{ "X-Gateway-Key" = $env:SQUIDBRAKE_AGENT_KEY } -TimeoutSec 20
+    } catch {
+        Write-Host "`nCouldn't reach your dashboard with that key ($($_.Exception.Message)). Check the key and run it again." -ForegroundColor Yellow
+        return
+    }
+    & $sb connect claude-code --url $env:SQUIDBRAKE_URL --key $env:SQUIDBRAKE_AGENT_KEY --yes --hook-only | Out-Null
+    Write-Host "`n  [OK] Connected to your dashboard (as '$($me.client)')." -ForegroundColor Green
+    Write-Host "`nLast step: close and reopen Claude Code, then work as usual."
+    Write-Host "Your dashboard: $($env:SQUIDBRAKE_URL)/dashboard`n"
     return
 }
 

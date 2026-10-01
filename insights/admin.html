@@ -78,7 +78,7 @@ const ago = (iso) => {
 };
 const STAGE = { "active": ["Active", "s-active"], "installed": ["Installed, no activity yet", "s-installed"],
   "quiet": ["Gone quiet", "s-quiet"], "opened link": ["Opened the link", "s-opened"], "link sent": ["Link sent", "s-sent"],
-  "left": ["Left the pilot", "s-left"], "setting up": ["Setting up", "s-installed"],
+  "left": ["Left the pilot", "s-left"], "setting up": ["Setting up", "s-installed"], "keys taken": ["Took keys, not connected yet", "s-opened"],
   "setup failed": ["Setup failed", "s-quiet"], "deleting": ["Deleting", "s-left"] };
 
 function login(msg = "") {
@@ -118,6 +118,18 @@ function passwordDialog(first) {
       box.remove(); store.set(""); key = ""; login("Password saved. Sign in with it.");
     } catch (err) { if (err.message !== "unauthorized") box.querySelector("#pe").textContent = err.message; }
   };
+}
+
+function followUp(p) {
+  const hi = `Hi ${p.contact ? p.contact.split(/[ ,]/)[0] : p.company + " team"}! `;
+  return {
+    "link sent": hi + `Did you get a chance to try Squidbrake? It takes about 2 minutes, everything is here:\n${p.link}`,
+    "opened link": hi + `Saw you opened the Squidbrake setup page. Anything that got in the way? Happy to do a quick 5-minute call and set it up together.\n${p.link}`,
+    "keys taken": hi + `Your dashboard is ready, the last bit is connecting Claude Code: step 2 on ${p.link} (one command), then restart Claude Code. Want me to walk you through it?`,
+    "installed": hi + `You're all set up! Restart Claude Code if you haven't, then try asking it to print your .env file: Squidbrake should block it.`,
+    "quiet": hi + `Haven't seen activity from Squidbrake in a few days. Was something annoying, like too many approvals? I can tune the rules for you, or switch it to shadow mode (it just records what it would block).`,
+    "active": hi + `How's Squidbrake working for you so far? Anything it held that it shouldn't have, or something it should have caught? 2 minutes of feedback would help a lot.`,
+  }[p.stage];
 }
 
 function message(company, link, hosted) {
@@ -200,7 +212,8 @@ function row(p) {
     <td class="num"><div><b>${w.events}</b> actions</div><div class="mini">${w.held} held · ${w.approved} approved · ${w.rejected} rejected</div>
       <div class="mini">${w.blocked} blocked${w.would_block ? ` · ${w.would_block} would block` : ""}${w.timed_out ? ` · ${w.timed_out} timed out` : ""}</div></td>
     <td>${agents}</td><td>${hits}</td>
-    <td><button class="btn" data-copy="${esc(p.link)}">Copy link</button>
+    <td>${followUp(p) ? `<button class="btn" data-copy="${esc(followUp(p))}" title="A message for where they are now">Copy follow-up</button>` : ""}
+      <button class="btn" data-copy="${esc(p.link)}">Copy link</button>
       <button class="icon-btn" title="Delete pilot" data-del="${esc(p.code)}">✕</button></td></tr>`;
 }
 
