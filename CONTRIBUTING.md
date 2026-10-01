@@ -38,6 +38,7 @@ Stop it with Ctrl+C, then check that the tests pass on your machine before you c
 | `taint.py` | Finds where an action sends things, and whether that came from outside content |
 | `rules.yaml` | The shipped policy. `examples/rules/` has policies for specific MCP servers |
 | `connect.py`, `claude_hook.py` | Connect Claude Code and MCP clients to the gateway |
+| `agent_hook.py` | The same hook for Cursor, Codex CLI, Gemini CLI, VS Code and Antigravity |
 | `gateway_proxy.py`, `gateway_mcp.py` | Wrap another MCP server; the demo database tools |
 | `dashboard.html`, `approve.html` | The dashboard and the phone approval page (single files, no build step) |
 | `incidents/` | Real AI-agent incidents replayed against the shipped rules, run in CI |
