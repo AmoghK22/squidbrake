@@ -121,3 +121,29 @@ def test_hosted_pilot_lifecycle(insights):
 def test_pilot_server_must_be_https_or_internal(tmp_path):
     for bad in ("http://pilots.example.com", "ftp://x", ""):
         assert pilot.join(tmp_path, "c", bad, True, "1") == 2
+
+def test_admin_password_and_sessions(insights):
+    key = {"X-Admin-Key": "admin-test-key"}
+    assert insights.post("/v1/admin/login", json={"password": "nope"}).status_code == 401
+    # the server key signs in the first time; then a password is set with it
+    token = insights.post("/v1/admin/login", json={"password": "admin-test-key"}).json()["token"]
+    s = {"X-Admin-Key": token}
+    assert insights.get("/v1/admin/me", headers=s).json() == {"has_password": False}
+    assert insights.post("/v1/admin/password", headers=s, json={"current": "wrong", "new": "a-long-password-1"}).status_code == 403
+    assert insights.post("/v1/admin/password", headers=s, json={"current": "admin-test-key", "new": "short"}).status_code == 422
+    assert insights.post("/v1/admin/password", headers=s, json={"current": "admin-test-key", "new": "a-long-password-1"}).status_code == 200
+    assert insights.get("/v1/admin/overview", headers=s).status_code == 401          # changing it signs everyone out
+    s = {"X-Admin-Key": insights.post("/v1/admin/login", json={"password": "a-long-password-1"}).json()["token"]}
+    assert insights.get("/v1/admin/me", headers=s).json() == {"has_password": True}
+    import app as insights_app
+    with insights_app.db() as c:                                                          # stored hashed, never as text
+        stored = c.execute("SELECT value FROM settings WHERE key='admin_password'").fetchone()[0]
+    assert "a-long-password-1" not in stored and stored.startswith("pbkdf2_sha256$")
+    insights.post("/v1/admin/logout", headers=s)
+    assert insights.get("/v1/admin/overview", headers=s).status_code == 401
+    assert insights.get("/v1/admin/overview", headers=key).status_code == 200            # the server key still works (provisioner)
+    insights_app._failures.clear()
+    for _ in range(8):
+        insights.post("/v1/admin/login", json={"password": "guess"})
+    assert insights.post("/v1/admin/login", json={"password": "a-long-password-1"}).status_code == 429   # slowed down
+    insights_app._failures.clear()

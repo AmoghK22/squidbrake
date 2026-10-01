@@ -3,7 +3,7 @@ Squidbrake Insights: see how pilot users use Squidbrake, without ever seeing wha
 
   /start/<code>        the page you send a founder: their install commands, with their pilot code filled in
   /install.ps1 | .sh   one-line installers (pipx + squidbrake)
-  /admin               your dashboard (INSIGHTS_ADMIN_KEY): pilots, installs, activity, what got blocked
+  /admin               your dashboard (sign in with your password, or INSIGHTS_ADMIN_KEY): pilots, activity, blocks
   POST /v1/pilot/join  an install joins with a code (squidbrake pilot join)
   POST /v1/ping        an install's usage counts (every 6 hours)
 
@@ -11,6 +11,7 @@ Run:  INSIGHTS_ADMIN_KEY=... uvicorn app:app --port 8090      (data in INSIGHTS_
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
@@ -18,6 +19,7 @@ import re
 import secrets
 import sqlite3
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -53,6 +55,8 @@ with db() as _c:
         rules_hit TEXT, total_events INTEGER, first_event TEXT);
     CREATE TABLE IF NOT EXISTS days (install_id TEXT NOT NULL, day TEXT NOT NULL, counts TEXT NOT NULL,
         PRIMARY KEY (install_id, day));
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
     """)
     # hosted pilots: their own gateway at <subdomain>.<HOSTED_DOMAIN>, started by provision.py on the server
     _have = {r[1] for r in _c.execute("PRAGMA table_info(pilots)")}
@@ -69,9 +73,114 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def admin(x_admin_key: str = Header(default="")) -> None:
-    if not ADMIN_KEY or not hmac.compare_digest(x_admin_key, ADMIN_KEY):
-        raise HTTPException(401, "admin key required")
+# --------------------------------------------------------------------------- admin sign-in
+# The dashboard signs in with a password you set (hashed here) and gets a 30-day session token; the password itself is
+# never stored in the browser. INSIGHTS_ADMIN_KEY (from the server's .env) also works: provision.py uses it, and it's
+# how you sign in the first time and set the password.
+
+SESSION_DAYS = 30
+_failures: dict[str, list[float]] = {}        # ip -> recent failed sign-ins
+
+
+def _hash_password(password: str, salt: bytes | None = None) -> str:
+    salt = salt or secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 300_000)
+    return f"pbkdf2_sha256$300000${salt.hex()}${digest.hex()}"
+
+
+def _password_ok(password: str) -> bool:
+    with db() as c:
+        row = c.execute("SELECT value FROM settings WHERE key='admin_password'").fetchone()
+    if not row or not password:
+        return False
+    _, rounds, salt, digest = row[0].split("$")
+    got = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), int(rounds)).hex()
+    return hmac.compare_digest(got, digest)
+
+
+def _key_ok(key: str) -> bool:
+    return bool(ADMIN_KEY) and bool(key) and hmac.compare_digest(key, ADMIN_KEY)
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _session_ok(token: str) -> bool:
+    if not token:
+        return False
+    with db() as c:
+        return bool(c.execute("SELECT 1 FROM sessions WHERE token_hash=? AND expires_at > ?", (_token_hash(token), now())).fetchone())
+
+
+def _throttle(ip: str) -> None:
+    recent = [t for t in _failures.get(ip, []) if time.time() - t < 900]
+    _failures[ip] = recent
+    if len(recent) >= 8:
+        raise HTTPException(429, "too many failed sign-ins: try again in 15 minutes")
+
+
+def _failed(ip: str) -> None:
+    _failures.setdefault(ip, []).append(time.time())
+
+
+def admin(request: Request, x_admin_key: str = Header(default="")) -> None:
+    if _key_ok(x_admin_key) or _session_ok(x_admin_key):
+        return
+    raise HTTPException(401, "sign in required")
+
+
+class LoginIn(BaseModel):
+    password: str = Field(max_length=200)
+
+
+@app.post("/v1/admin/login")
+def login(body: LoginIn, request: Request):
+    ip = request.client.host if request.client else "?"
+    _throttle(ip)
+    if not (_password_ok(body.password) or _key_ok(body.password)):
+        _failed(ip)
+        raise HTTPException(401, "wrong password")
+    token = secrets.token_urlsafe(32)
+    expires = (datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)).isoformat(timespec="seconds")
+    with _lock, db() as c:
+        c.execute("DELETE FROM sessions WHERE expires_at <= ?", (now(),))
+        c.execute("INSERT INTO sessions (token_hash, created_at, expires_at) VALUES (?,?,?)", (_token_hash(token), now(), expires))
+        has_password = bool(c.execute("SELECT 1 FROM settings WHERE key='admin_password'").fetchone())
+    return {"token": token, "expires": expires, "has_password": has_password}
+
+
+@app.post("/v1/admin/logout")
+def logout(x_admin_key: str = Header(default="")):
+    with _lock, db() as c:
+        c.execute("DELETE FROM sessions WHERE token_hash=?", (_token_hash(x_admin_key),))
+    return {"ok": True}
+
+
+class PasswordIn(BaseModel):
+    current: str = Field(max_length=200)
+    new: str = Field(min_length=10, max_length=200)
+
+
+@app.post("/v1/admin/password", dependencies=[Depends(admin)])
+def set_password(body: PasswordIn, request: Request):
+    """Set or change the admin password. Needs the current password (or the server key the first time)."""
+    ip = request.client.host if request.client else "?"
+    _throttle(ip)
+    if not (_password_ok(body.current) or _key_ok(body.current)):
+        _failed(ip)
+        raise HTTPException(403, "the current password (or server key) is wrong")
+    with _lock, db() as c:
+        c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_password', ?)", (_hash_password(body.new),))
+        c.execute("DELETE FROM sessions")                     # every browser signs in again with the new password
+    return {"ok": True}
+
+
+@app.get("/v1/admin/me", dependencies=[Depends(admin)])
+def admin_me():
+    with db() as c:
+        has_password = bool(c.execute("SELECT 1 FROM settings WHERE key='admin_password'").fetchone())
+    return {"has_password": has_password}
 
 
 def public_url(request: Request) -> str:
