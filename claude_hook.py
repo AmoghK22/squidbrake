@@ -99,15 +99,20 @@ def pre(ev: dict, http: httpx.Client) -> None:
         (STATE_DIR / f"{ev['tool_use_id']}.json").write_text(json.dumps({"event_id": d["event_id"], "t0": time.time()}))
 
 
-def post(ev: dict, http: httpx.Client) -> None:
+def post(ev: dict, http: httpx.Client, failed: bool = False) -> None:
+    """PostToolUse: attach the result. PostToolUseFailure (the tool errored, e.g. a command exited non-zero): the error."""
     f = STATE_DIR / f"{ev.get('tool_use_id')}.json"
     if not f.exists():
         return
     state = json.loads(f.read_text())
     f.unlink(missing_ok=True)
+    result = {"duration_ms": (time.time() - state["t0"]) * 1000}
+    if failed:
+        result["error"] = str(ev.get("error") or "the tool failed")[:2000]
+    else:
+        result["output"] = ev.get("tool_response")
     try:
-        http.post(f"/v1/events/{state['event_id']}/result", json={
-            "output": ev.get("tool_response"), "duration_ms": (time.time() - state["t0"]) * 1000})
+        http.post(f"/v1/events/{state['event_id']}/result", json=result)
     except httpx.HTTPError:
         pass  # the tool already ran; never fail Claude Code because reporting failed
 
@@ -136,6 +141,8 @@ def main() -> None:
             pre(ev, http)
         elif ev.get("hook_event_name") == "PostToolUse":
             post(ev, http)
+        elif ev.get("hook_event_name") == "PostToolUseFailure":
+            post(ev, http, failed=True)
         elif ev.get("hook_event_name") == "UserPromptSubmit":
             prompt(ev, http)
     sys.exit(0)

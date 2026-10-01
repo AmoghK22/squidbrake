@@ -72,7 +72,7 @@ def settings_path(project: str | None) -> Path:
 def strip_ours(settings: dict) -> dict:
     """Remove hook entries this script added earlier (so re-running doesn't duplicate them)."""
     hooks = settings.get("hooks", {})
-    for event in ("PreToolUse", "PostToolUse", "UserPromptSubmit"):
+    for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit"):
         groups = []
         for g in hooks.get(event, []):
             g["hooks"] = [h for h in g.get("hooks", []) if "claude_hook.py" not in json.dumps(h)]
@@ -131,6 +131,8 @@ def claude_code(args) -> None:
     hooks = settings.setdefault("hooks", {})
     hooks.setdefault("PreToolUse", []).append({"matcher": "*", "hooks": [{**hook_cmd, "timeout": 600}]})
     hooks.setdefault("PostToolUse", []).append({"matcher": "*", "hooks": [{**hook_cmd, "timeout": 30}]})
+    # a tool that errored (e.g. a command that exited non-zero) reports here instead of PostToolUse
+    hooks.setdefault("PostToolUseFailure", []).append({"matcher": "*", "hooks": [{**hook_cmd, "timeout": 30}]})
     # what you ask, so the gateway can tell what came from you and what came from a web page or an email
     hooks.setdefault("UserPromptSubmit", []).append({"hooks": [{**hook_cmd, "timeout": 15}]})
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -180,11 +182,22 @@ PROXY = BASE_DIR / "gateway_proxy.py"
 SANDBOX = BASE_DIR / "demo_apps_mcp.py"
 
 
+def agent_configs() -> dict[str, Path]:
+    """Where each agent keeps its MCP servers (only read here, to find a key we gave it before)."""
+    appdata = Path(os.getenv("APPDATA") or Path.home() / "AppData" / "Roaming")
+    desktop = (appdata / "Claude" if sys.platform == "win32" else
+               Path.home() / "Library" / "Application Support" / "Claude" if sys.platform == "darwin" else
+               Path.home() / ".config" / "Claude")
+    return {"antigravity": ANTIGRAVITY_CONFIG, "cursor": Path.home() / ".cursor" / "mcp.json",
+            "claude-desktop": desktop / "claude_desktop_config.json"}
+
+
 def existing_mcp_key(agent: str, url: str) -> str | None:
-    """Reuse the key this agent already has (from its Antigravity config) instead of making a new one."""
-    if agent == "antigravity" and ANTIGRAVITY_CONFIG.exists():
+    """Reuse the key this agent already has (from its MCP config) instead of making a new one."""
+    path = agent_configs().get(agent)
+    if path and path.exists():
         try:
-            servers = json.loads(ANTIGRAVITY_CONFIG.read_text(encoding="utf-8") or "{}").get("mcpServers", {})
+            servers = json.loads(path.read_text(encoding="utf-8") or "{}").get("mcpServers", {})
         except ValueError:
             return None
         for s in servers.values():
