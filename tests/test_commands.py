@@ -22,7 +22,7 @@ def kind(line):
     "ls -la && rm -rf ~", "true; rm -rf /", "bash -c 'rm -rf /'", "sh -c \"cd /tmp && rm -rf ~\"",
     "bash -lc 'rm -rf ~/'", "sh -ec \"rm -rf ~\"", "bash -c -l 'rm -rf /'",
     'powershell -Command "Remove-Item -Recurse -Force C:\\Users"', "echo $(rm -rf ~)", "echo `rm -rf /`",
-    "npx rimraf /", "timeout 5 sudo rm -rf /", "busybox rm -rf /", "busybox sh -c 'rm -rf ~'", "watch -n 1 rm -rf ~/",
+    "npx rimraf /", "timeout 5 sudo rm -rf /", "busybox rm -rf /", "busybox sh -c 'rm -rf ~'", "watch -n 1 rm -rf ~/", "watch -n 5 \"rm -rf ~/\"",
     "dd if=/dev/zero of=/dev/sda bs=1M", "mkfs.ext4 /dev/sdb1", "wipefs -a /dev/sda", "format D:", "chmod -R 777 /",
 ])
 def test_catastrophic(line):

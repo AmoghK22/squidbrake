@@ -231,6 +231,8 @@ def _strip_wrappers(words: list[str]) -> list[str]:
             while words and (words[0].startswith("-") or (w in ("timeout", "watch") and re.match(r"^\d", words[0]))
                              or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0])):
                 words = words[1:]
+            if w == "watch" and len(words) == 1 and " " in words[0]:   # watch "rm -rf ~": it runs the string via sh -c
+                words = _words(words[0])
             continue
         break
     return words
