@@ -1,2 +1,2 @@
 """Squidbrake: brakes for your AI agents. See https://github.com/batrapulkit/squidbrake"""
-__version__ = "0.3.6"
+__version__ = "0.3.7"

@@ -1,5 +1,7 @@
 # Squidbrake
 
+<!-- mcp-name: io.github.batrapulkit/squidbrake -->
+
 [![tests](https://github.com/batrapulkit/squidbrake/actions/workflows/tests.yml/badge.svg)](https://github.com/batrapulkit/squidbrake/actions/workflows/tests.yml)
 [![PyPI](https://img.shields.io/pypi/v/squidbrake.svg)](https://pypi.org/project/squidbrake/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -159,6 +161,16 @@ Make a clean copy (no keys, no history): `python pack.py` -> `dist/squidbrake.zi
 - **A cloud server, 24/7:** unzip there and run `bash install.sh` (HTTPS included, no domain needed).
 
 ## Other ways to send calls through it
+
+**Any MCP server** - put Squidbrake in front of it, in any MCP client. The agent sees the app's normal tools, and
+each call is checked first (with `GATEWAY_URL` and `GATEWAY_API_KEY` set in the client's MCP config):
+
+```bash
+squidbrake proxy --app linear --url https://mcp.linear.app/mcp          # a remote MCP server
+squidbrake proxy --app stripe -- npx -y @stripe/mcp --tools=all          # one started by a command
+```
+
+`squidbrake connect guard` does this for the servers your agents already use.
 
 **Python** - wrap your tools:
 

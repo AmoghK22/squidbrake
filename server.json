@@ -1,0 +1,55 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.batrapulkit/squidbrake",
+  "title": "Squidbrake",
+  "description": "Brakes for AI agents: checks every MCP tool call against your rules; risky ones wait for a person.",
+  "repository": {
+    "url": "https://github.com/batrapulkit/squidbrake",
+    "source": "github"
+  },
+  "websiteUrl": "https://squidbrake.com",
+  "version": "0.3.7",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "squidbrake",
+      "version": "0.3.7",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "proxy"
+        },
+        {
+          "type": "named",
+          "name": "--app",
+          "description": "Short name for the app being guarded, used in the dashboard and in rules (e.g. linear)",
+          "isRequired": true
+        },
+        {
+          "type": "named",
+          "name": "--url",
+          "description": "The app's remote MCP server URL; every call to it is checked by Squidbrake first",
+          "isRequired": true
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "GATEWAY_URL",
+          "description": "Your Squidbrake gateway (start one with: pipx install squidbrake && squidbrake)",
+          "default": "http://localhost:8080"
+        },
+        {
+          "name": "GATEWAY_API_KEY",
+          "description": "An agent key from your gateway",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

@@ -5,6 +5,8 @@ The `squidbrake` command (installed with pip):
   squidbrake connect all             connect every AI agent on this computer (same as: python connect.py ...)
   squidbrake connect claude-code     connect one agent
   squidbrake hook                    the Claude Code hook, used by the Claude Code plugin (plugin/)
+  squidbrake proxy --app NAME -- CMD an MCP server that checks every call to the app's MCP server CMD first
+                                     (same as: python gateway_proxy.py ...)
   squidbrake pilot join CODE --server URL   share usage counts with a pilot (asks first; see pilot.py)
   squidbrake add-key NAME | keys | verify FILE | ...   see: squidbrake --help
 
@@ -36,6 +38,11 @@ def main() -> int:
         sys.argv = ["claude_hook.py", *argv[1:]]
         import claude_hook
         claude_hook.main()
+        return 0
+    if argv[:1] == ["proxy"]:  # an MCP server: put Squidbrake in front of any app's MCP server
+        sys.argv = ["squidbrake proxy", *argv[1:]]
+        import gateway_proxy
+        gateway_proxy.main()
         return 0
     import server
     return server.main(argv)
