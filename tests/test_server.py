@@ -119,6 +119,49 @@ def test_dashboard_served(c):
     assert c.get("/", follow_redirects=False).headers["location"] == "/dashboard"
 
 
+def test_dashboard_approval_shortcuts(c):
+    """The approval-queue shortcuts (j/k/a/r/?) ship in the dashboard and are guarded."""
+    html = c.get("/dashboard").text.replace("\r\n", "\n")   # tolerate CRLF checkouts on Windows
+    for key in ('ev.key === "j"', 'ev.key === "k"', 'ev.key === "a"', 'ev.key === "r"', 'ev.key === "?"'):
+        assert key in html
+    assert 'id="shortcutDlg"' in html
+    # they must not fire while typing, in a dialog, or with a modifier held (Ctrl+R must still reload)
+    guard = html[html.index("function shortcutsBlocked"):]
+    guard = guard[:guard.index("}\n")]
+    for needle in ("isTypingTarget", "ev.ctrlKey", "ev.metaKey", "dialog[open]"):
+        assert needle in guard
+    assert 'ev.repeat || shortcutsBlocked(ev)' in html
+
+def _js_function(html, start, end):
+    return html[html.index(start):html.index(end, html.index(start))]
+
+
+def test_dashboard_shortcuts_never_select_or_approve_on_their_own(c):
+    """Approving is deliberate: nothing is auto-selected, and `a` needs a second press on the same request."""
+    html = c.get("/dashboard").text.replace("\r\n", "\n")
+    # 1. renderQueue must not pick a request for the person; only j/k or a click selects.
+    render = _js_function(html, "function renderQueue", "// ---------- drawer")
+    assert "shortcutQueueId = null" in render            # a vanished selection is dropped, not replaced
+    assert not re.search(r"shortcutQueueId\s*=(?!=)\s*(?!\s|null)", render)   # ...and never set to anything else here
+    # ...and a decision clears the selection instead of moving it to the next request.
+    controls = _js_function(html, "function decisionControls", "function preview")
+    assert "shortcutQueueId = null" in controls and "cancelApprove()" in controls
+    # 2. `a` only arms; the second press within ~3 seconds approves.
+    assert "const APPROVE_CONFIRM_MS = 3000" in html
+    approve = _js_function(html, "function approveSelected", "function focusRejectNote")
+    assert "Press a again to approve" in approve
+    assert "approveArm.id === id" in approve and approve.index("Press a again") > approve.index("btn.click()")
+    assert "setTimeout(cancelApprove, APPROVE_CONFIRM_MS)" in approve
+    # 3. Anything else cancels it: another key, a different selection, a queue change, opening the drawer.
+    assert re.search(r'ev\.key !== "a" \|\| shortcutsBlocked\(ev\)\)\) cancelApprove\(\)', html)
+    assert "if (approveArm && approveArm.id !== id) cancelApprove()" in html
+    assert 'if (ids.join("|") !== queueIds.join("|")) cancelApprove()' in render
+    assert "cancelApprove();\n    selectedId = id;" in html
+    # the confirmation must run before the key-repeat/blocked guard returns, so typing in a note cancels it too
+    handler = _js_function(html, 'document.addEventListener("keydown"', '$("#shortcutDone")')
+    assert handler.index("cancelApprove()") < handler.index("ev.repeat || shortcutsBlocked(ev)) return")
+
+
 def _held(c, name, headers=H):
     d = c.post("/v1/events", headers=headers, json={"name": name, "input": {"amount": 50}}).json()
     assert d["decision"] == "review" and d["status"] == "awaiting_approval" and d["approval_deadline"]
