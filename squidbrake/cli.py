@@ -2,7 +2,8 @@
 The `squidbrake` command (installed with pip):
 
   squidbrake                         start the gateway (same as: python server.py)
-  squidbrake connect claude-code     connect an agent (same as: python connect.py ...)
+  squidbrake connect all             connect every AI agent on this computer (same as: python connect.py ...)
+  squidbrake connect claude-code     connect one agent
   squidbrake hook                    the Claude Code hook, used by the Claude Code plugin (plugin/)
   squidbrake pilot join CODE --server URL   share usage counts with a pilot (asks first; see pilot.py)
   squidbrake add-key NAME | keys | verify FILE | ...   see: squidbrake --help

@@ -2,6 +2,8 @@
 Connect an AI agent to Squidbrake in one command.
 (Installed with pip? Type `squidbrake connect ...` wherever this says `python connect.py ...`.)
 
+  python connect.py all                    every agent on this computer at once: Claude Code, Cursor, Codex,
+                                           Gemini CLI, VS Code, Antigravity, and the MCP servers they use (--remove undoes it)
   python connect.py claude-code            Claude Code: every tool call goes through the gateway (hook)
                                            + database tools (MCP)
   python connect.py claude-code --remove   undo it
@@ -52,6 +54,9 @@ def new_key(name: str, url: str = "http://localhost:8080") -> str:
     import server  # the gateway's key store (data/keys.json next to it)
     if server.keystore.from_env:
         sys.exit("Keys come from GATEWAY_API_KEYS on this gateway. Add one there and pass it with --key.")
+    # connecting before the gateway's first start: make its first keys now, or the admin key would never be shown
+    if created := server.keystore.ensure_initialized():
+        server.print_banner(None, created)
     existing = {k["name"] for k in server.keystore.listing()}
     final, n = name, 2
     while final in existing:
@@ -124,8 +129,9 @@ def claude_code(args) -> None:
         return
 
     where = f"the project {Path(args.project).resolve()}" if args.project else "ALL your Claude Code projects"
-    print(f"This routes every Claude Code tool call in {where} through the gateway at {args.url},\n"
-          f"and adds database tools. It changes {path} (a backup is kept).")
+    tools = "" if args.hook_only else ",\nand adds database tools"
+    print(f"This routes every Claude Code tool call in {where} through the gateway at {args.url}{tools}.\n"
+          f"It changes {path} (a backup is kept).")
     if not confirm("Continue?", args.yes):
         return
     key = args.key or previous_key(settings, args.url) or new_key("claude-code", args.url)
@@ -484,15 +490,42 @@ def agents(args) -> None:
         print(f"{name}: hook added ({t['covers']}). Restart {name} to apply.")
 
 
+# --------------------------------------------------------------------------- everything at once
+
+def connect_all(args) -> None:
+    """Claude Code, the other coding agents' hooks, and the MCP servers they already use, in one go."""
+    claude = bool(shutil.which("claude")) or (Path.home() / ".claude").exists()
+    if not args.remove:
+        print(f"This sends what every AI agent on this computer does through the gateway at {args.url}:\n"
+              f"  - Claude Code: {'every tool call' if claude else 'not found, skipped'}\n"
+              "  - Cursor, Codex, Gemini CLI, VS Code Copilot, Antigravity (the ones installed): commands, reads and edits\n"
+              "  - the MCP servers those agents already use\n"
+              "Every config is backed up first; `connect all --remove` undoes it all.")
+        if not confirm("Continue?", args.yes):
+            return
+    each = argparse.Namespace(url=args.url, key=args.key, remove=args.remove, yes=True, agent="all",
+                              project=None, hook_only=True)
+    if claude:
+        print("\nClaude Code")
+        claude_code(each)
+    print("\nOther coding agents")
+    agents(each)
+    print("\nMCP servers")
+    guard(each)
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="squidbrake connect" if os.getenv("SQUIDBRAKE_CLI") else None,
                                 description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("claude-code", "mcp", "wrap", "guard", "agents"):
+    for name in ("all", "claude-code", "mcp", "wrap", "guard", "agents"):
         s = sub.add_parser(name)
         s.add_argument("--url", default="http://localhost:8080", help="the gateway's address")
         s.add_argument("--key")
-        if name == "agents":
+        if name == "all":
+            s.add_argument("--remove", action="store_true", help="undo it for every agent")
+            s.add_argument("--yes", action="store_true")
+        elif name == "agents":
             s.add_argument("--agent", default="all", help="cursor, gemini-cli, codex, vscode, antigravity, or all (every one installed)")
             s.add_argument("--remove", action="store_true", help="take Squidbrake's hook out again")
             s.add_argument("--yes", action="store_true")
@@ -523,7 +556,7 @@ def main(argv: list[str] | None = None) -> None:
     args.url = args.url.rstrip("/")
     if args.cmd == "mcp":
         args.agent = args.name
-    {"claude-code": claude_code, "mcp": mcp, "wrap": wrap, "guard": guard, "agents": agents}[args.cmd](args)
+    {"all": connect_all, "claude-code": claude_code, "mcp": mcp, "wrap": wrap, "guard": guard, "agents": agents}[args.cmd](args)
 
 
 if __name__ == "__main__":

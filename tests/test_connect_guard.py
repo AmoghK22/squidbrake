@@ -56,3 +56,26 @@ def test_guard_with_no_configs(tmp_path, monkeypatch, capsys):
     _home(tmp_path, monkeypatch)
     connect.main(["guard", "--agent", "all", "--url", URL, "--key", KEY, "--yes"])
     assert "No MCP configs found" in capsys.readouterr().out
+
+
+def test_connect_all_and_undo(tmp_path, monkeypatch):
+    home = _home(tmp_path, monkeypatch)
+    monkeypatch.setattr(connect.shutil, "which", lambda name: None)       # don't call a real `claude` / `codex`
+    for d in (".claude", ".cursor", ".codex"):
+        (home / d).mkdir()
+    mcp = home / ".cursor" / "mcp.json"
+    original = {"mcpServers": {"github": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"]}}}
+    mcp.write_text(json.dumps(original), encoding="utf-8")
+
+    connect.main(["all", "--url", URL, "--key", KEY, "--yes"])
+    claude = json.loads((home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert KEY in json.dumps(claude["hooks"]["PreToolUse"])
+    assert "agent_hook.py" in (home / ".cursor" / "hooks.json").read_text(encoding="utf-8")
+    assert "agent_hook.py" in (home / ".codex" / "hooks.json").read_text(encoding="utf-8")
+    assert not (home / ".gemini").exists()                                 # not installed: left alone
+    assert json.loads(mcp.read_text(encoding="utf-8"))["mcpServers"]["github"]["args"][0] == str(connect.PROXY)
+
+    connect.main(["all", "--remove", "--yes"])
+    assert json.loads(mcp.read_text(encoding="utf-8")) == original
+    assert "hooks" not in json.loads((home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert not (home / ".codex" / "hooks.json").exists()

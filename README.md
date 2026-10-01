@@ -29,8 +29,9 @@ Free and open source (Apache 2.0). Runs on your laptop or your own server; your 
 - **Judges by history:** blocks a retry of something a person rejected, catches look-alike domains
   (`acrne-corp.com` pretending to be `acme.com`), flags duplicate refunds, and lets you write sequence rules
   ("deleting a database right after its backups were turned off") that say which earlier step caused them.
-- **Works with real agents:** one command connects Claude Code (every tool call, via hooks), and any MCP app
-  (Stripe, GitHub, Slack, databases, internal tools) can be wrapped for Antigravity, Cursor, Claude Desktop and others.
+- **Works with real agents:** `squidbrake connect all` connects Claude Code, Cursor, Codex, Gemini CLI, VS Code
+  Copilot and Antigravity (their commands, reads and edits, via hooks) and the MCP servers they already use; any MCP
+  app (Stripe, GitHub, Slack, databases, internal tools) can be wrapped too.
 - **For teams:** a key per person and per agent, roles (only `finance` approves wires), an emergency stop (all agents,
   one agent, or one conversation, which also ends Claude Code's turn),
   reports, CSV export, and evidence anyone can verify offline (`python verify.py`).
@@ -62,19 +63,19 @@ manager approves or rejects them. If the editor asks whether to allow tasks that
 
 ```bash
 pipx install squidbrake           # or: pip install squidbrake
-squidbrake                        # prints your keys and opens the dashboard
+squidbrake connect all            # every AI agent on this computer now goes through it
+squidbrake                        # start it: opens the dashboard
 ```
 
-Then connect Claude Code, so every tool call goes through Squidbrake from then on. Either as a plugin, from inside
-Claude Code (it asks for the agent key the gateway printed; see [plugin/](plugin/)):
+`connect all` finds the agents you have (Claude Code, Cursor, Codex, Gemini CLI, VS Code Copilot, Antigravity) and
+the MCP servers they already use, and routes them all through Squidbrake. It prints your dashboard key the first
+time, backs up every config it changes, and `squidbrake connect all --remove` undoes it. Restart the agents, then
+ask one to run `rm -rf ~/` and watch it get blocked.
 
-```
-/plugin marketplace add batrapulkit/squidbrake
-/plugin install squidbrake@squidbrake
-```
+Your rules, keys and data live in `~/.squidbrake`; edit `~/.squidbrake/rules.yaml` and changes apply at once.
 
-or from the terminal: `squidbrake connect claude-code`. Your rules, keys and data live in `~/.squidbrake`;
-edit `~/.squidbrake/rules.yaml` and changes apply at once.
+Only Claude Code? It's also a plugin, installed from inside Claude Code (see [plugin/](plugin/)):
+`/plugin marketplace add batrapulkit/squidbrake`, then `/plugin install squidbrake@squidbrake`.
 
 From a clone instead: `git clone https://github.com/batrapulkit/squidbrake && cd squidbrake`, then `./start.sh`
 (Windows: `start.bat`) and `./connect.sh claude-code` (Windows: `connect.bat claude-code`).
@@ -103,9 +104,20 @@ With the gateway running, one command per agent (installed with pip, type `squid
 from a clone, use the `.venv` Python that `start.bat` / `start.sh` created):
 
 ```bash
-.venv/Scripts/python connect.py claude-code          # Windows (macOS/Linux: .venv/bin/python)
+.venv/Scripts/python connect.py all                  # every agent at once (Windows; macOS/Linux: .venv/bin/python)
+.venv/Scripts/python connect.py claude-code          # or one at a time
 .venv/Scripts/python connect.py mcp --name antigravity   # also: claude-desktop, cursor
 ```
+
+| Agent | What's checked | One at a time |
+|---|---|---|
+| Claude Code | every tool call (Bash, PowerShell, edits, reads, web, MCP) | `connect claude-code` |
+| Cursor | terminal commands and file reads, plus its MCP servers | `connect agents --agent cursor`, `connect guard --agent cursor` |
+| Codex | shell commands and edits (approve the hook once in Codex with `/hooks`) | `connect agents --agent codex` |
+| Gemini CLI | shell commands, reads, writes and edits, plus its MCP servers | `connect agents --agent gemini-cli` |
+| VS Code Copilot | agent-mode commands, reads and edits, plus its MCP servers | `connect agents --agent vscode` |
+| Antigravity | terminal commands, reads and writes, plus its MCP servers | `connect agents --agent antigravity` |
+| Windsurf, Kiro, Claude Desktop | their MCP servers | `connect guard --agent windsurf` |
 
 - **Claude Code**: a hook sends *every* tool call (Bash, PowerShell, Edit, Write, Read, WebFetch, MCP tools)
   through the gateway before it runs. Blocked calls are refused with the reason, and calls held for
