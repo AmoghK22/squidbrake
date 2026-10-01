@@ -20,6 +20,7 @@ def kind(line):
     "Remove-Item -Recurse -Force C:\\", "rm -Recurse -Force $env:USERPROFILE",
     "del /s /q C:\\*", "rm -rf /etc", "rm -rf /usr/", "rm -rf C:\\Windows",
     "ls -la && rm -rf ~", "true; rm -rf /", "bash -c 'rm -rf /'", "sh -c \"cd /tmp && rm -rf ~\"",
+    "bash -lc 'rm -rf ~/'", "sh -ec \"rm -rf ~\"", "bash -c -l 'rm -rf /'",
     'powershell -Command "Remove-Item -Recurse -Force C:\\Users"', "echo $(rm -rf ~)", "echo `rm -rf /`",
     "npx rimraf /", "timeout 5 sudo rm -rf /",
     "dd if=/dev/zero of=/dev/sda bs=1M", "mkfs.ext4 /dev/sdb1", "wipefs -a /dev/sda", "format D:", "chmod -R 777 /",

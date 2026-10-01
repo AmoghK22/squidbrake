@@ -8,6 +8,9 @@ Connect an AI agent to Squidbrake in one command.
   python connect.py mcp --name antigravity Antigravity, Claude Desktop, Cursor, ...: prints the MCP config to paste
                                            (--install writes it into Antigravity's config for you)
 
+Guard every MCP server your agents already use (Cursor, Windsurf, VS Code, Gemini CLI, Antigravity, Claude Desktop):
+  python connect.py guard --agent all          (--remove puts the originals back)
+
 Guard any app (Stripe, GitHub, Gmail, Slack, ... anything with an MCP server) for an agent:
   python connect.py wrap --agent claude-code --app stripe --env STRIPE_SECRET_KEY=sk_... -- npx -y @stripe/mcp --tools=all
   python connect.py wrap --agent antigravity --install --sandbox      (the built-in Acme sandbox company)
@@ -22,8 +25,10 @@ Options:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -180,7 +185,8 @@ def mcp(args) -> None:
 
 # --------------------------------------------------------------------------- guard any app
 
-ANTIGRAVITY_CONFIG = Path.home() / ".gemini" / "antigravity" / "mcp_config.json"
+def antigravity_config() -> Path:          # looked up each time, so tests (and a changed HOME) see the right one
+    return Path.home() / ".gemini" / "antigravity" / "mcp_config.json"
 PROXY = BASE_DIR / "gateway_proxy.py"
 SANDBOX = BASE_DIR / "demo_apps_mcp.py"
 
@@ -191,7 +197,7 @@ def agent_configs() -> dict[str, Path]:
     desktop = (appdata / "Claude" if sys.platform == "win32" else
                Path.home() / "Library" / "Application Support" / "Claude" if sys.platform == "darwin" else
                Path.home() / ".config" / "Claude")
-    return {"antigravity": ANTIGRAVITY_CONFIG, "cursor": Path.home() / ".cursor" / "mcp.json",
+    return {"antigravity": antigravity_config(), "cursor": Path.home() / ".cursor" / "mcp.json",
             "claude-desktop": desktop / "claude_desktop_config.json"}
 
 
@@ -236,8 +242,8 @@ def deliver(agent: str, server_name: str, entry: dict, args, done: str) -> None:
             print(f"Added MCP server '{server_name}' to Claude Code. Restart Claude Code. {done}")
         return
     if agent == "antigravity" and getattr(args, "install", False):
-        install_json(ANTIGRAVITY_CONFIG, server_name, entry)
-        print(f"Added '{server_name}' to {ANTIGRAVITY_CONFIG} (backup kept). Restart Antigravity. {done}")
+        install_json(antigravity_config(), server_name, entry)
+        print(f"Added '{server_name}' to {antigravity_config()} (backup kept). Restart Antigravity. {done}")
         return
     print("\n" + WHERE.get(agent, "Add this to your agent's MCP configuration") + ", then restart the agent:\n")
     print(json.dumps({"mcpServers": {server_name: entry}}, indent=2))
@@ -268,15 +274,234 @@ def wrap(args) -> None:
             f"Its {app} tools now go through the gateway (shown as {app}.<tool>); watch at {args.url}/dashboard")
 
 
+# --------------------------------------------------------------------------- guard an agent's own MCP servers
+
+def _user_dir() -> Path:
+    appdata = Path(os.getenv("APPDATA") or Path.home() / "AppData" / "Roaming")
+    return (appdata if sys.platform == "win32" else
+            Path.home() / "Library" / "Application Support" if sys.platform == "darwin" else Path.home() / ".config")
+
+
+def mcp_configs() -> dict[str, list[tuple[Path, str]]]:
+    """agent -> its user-level MCP config files, each with the key its servers live under."""
+    home = Path.home()
+    devin = (Path(os.getenv("APPDATA") or home) / "devin" if sys.platform == "win32" else
+             Path(os.getenv("XDG_CONFIG_HOME") or home / ".config") / "devin")
+    return {
+        "cursor": [(home / ".cursor" / "mcp.json", "mcpServers")],
+        "windsurf": [(devin / "mcp_config.json", "mcpServers"), (home / ".codeium" / "windsurf" / "mcp_config.json", "mcpServers")],
+        "vscode": [(_user_dir() / "Code" / "User" / "mcp.json", "servers"), (home / ".copilot" / "mcp-config.json", "mcpServers")],
+        "gemini-cli": [(home / ".gemini" / "settings.json", "mcpServers")],
+        "antigravity": [(home / ".gemini" / "config" / "mcp_config.json", "mcpServers"), (antigravity_config(), "mcpServers")],
+        "kiro": [(home / ".kiro" / "settings" / "mcp.json", "mcpServers")],
+        "claude-desktop": [(agent_configs()["claude-desktop"], "mcpServers")],
+    }
+
+
+def _originals_path(agent: str, path: Path) -> Path:
+    tag = hashlib.sha1(str(path).encode()).hexdigest()[:8]
+    return Path.home() / ".squidbrake" / "guarded" / f"{agent}-{tag}.json"
+
+
+def _ours(entry: dict) -> bool:
+    text = json.dumps(entry)
+    return "gateway_proxy.py" in text or "gateway_mcp.py" in text or "demo_apps_mcp.py" in text
+
+
+def guard(args) -> None:
+    """Route every MCP server an agent already uses through Squidbrake (or put them back with --remove)."""
+    configs = mcp_configs()
+    if args.agent != "all" and args.agent not in configs:
+        sys.exit(f"don't know where {args.agent} keeps its MCP servers; known: {', '.join(configs)}")
+    targets = [(a, path, key_name) for a, files in configs.items() if args.agent in ("all", a)
+               for path, key_name in files if path.exists()]
+    if not targets:
+        print("No MCP configs found for: " + ", ".join(configs if args.agent == "all" else [args.agent]))
+        return
+    keys: dict[str, str] = {}
+    for agent, path, key_name in targets:
+        text = path.read_text(encoding="utf-8").strip() if path.exists() else ""
+        try:
+            data = json.loads(text) if text else {}
+        except ValueError:
+            print(f"{agent}: {path} isn't plain JSON (comments?); skipped. Use `connect wrap` for single servers.")
+            continue
+        servers = data.get(key_name) or {}
+        saved_path = _originals_path(agent, path)
+        saved = json.loads(saved_path.read_text(encoding="utf-8")) if saved_path.exists() else {}
+        if args.remove:
+            for name, original in saved.items():
+                if name in servers:
+                    servers[name] = original
+            changed, note = list(saved), "restored"
+        else:
+            if any(not _ours(e) for e in servers.values() if isinstance(e, dict) and not e.get("disabled")):
+                keys[agent] = keys.get(agent) or args.key or existing_mcp_key(agent, args.url) or new_key(agent, args.url)
+            key = keys.get(agent, "")
+            changed, skipped = [], []
+            for name, entry in servers.items():
+                if not isinstance(entry, dict) or _ours(entry) or entry.get("disabled"):
+                    continue
+                remote = entry.get("url") or entry.get("serverUrl") or entry.get("httpUrl")
+                if remote and entry.get("headers"):
+                    skipped.append(f"{name} (remote with its own headers)")
+                    continue
+                target = ["--url", remote] if remote else ["--", entry.get("command", ""), *entry.get("args", [])]
+                if not remote and not entry.get("command"):
+                    skipped.append(name)
+                    continue
+                app = re.sub(r"[^a-z0-9_-]+", "-", name.lower()).strip("-") or "app"
+                env = {**(entry.get("env") or {}), "GATEWAY_URL": args.url, "GATEWAY_API_KEY": key, "GATEWAY_SOURCE": agent}
+                saved[name] = entry
+                servers[name] = {**({"type": "stdio"} if key_name == "servers" else {}),
+                                 "command": PYTHON, "args": [str(PROXY), "--app", app, *target], "env": env}
+                changed.append(name)
+            note = "now go through Squidbrake" + (f" (skipped: {', '.join(skipped)})" if skipped else "")
+        if not changed:
+            print(f"{agent}: nothing to {'restore' if args.remove else 'guard'} in {path}")
+            continue
+        if not args.yes and not confirm(f"{agent}: change {len(changed)} MCP server(s) in {path} (a backup is kept)?", False):
+            continue
+        shutil.copy2(path, path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}"))
+        data[key_name] = servers
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        saved_path.parent.mkdir(parents=True, exist_ok=True)
+        if args.remove:
+            saved_path.unlink(missing_ok=True)
+        else:
+            saved_path.write_text(json.dumps(saved, indent=2), encoding="utf-8")
+        print(f"{agent}: {', '.join(changed)} {note}. Restart {agent} to apply.")
+
+
+# --------------------------------------------------------------------------- hooks for the other coding agents
+
+AGENT_HOOK = BASE_DIR / "agent_hook.py"
+
+
+def _q(s: str) -> str:
+    return f'"{s}"' if " " in s else s
+
+
+def _read_json(path: Path) -> dict:
+    text = path.read_text(encoding="utf-8").strip() if path.exists() else ""
+    return json.loads(text) if text else {}
+
+
+def _write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        shutil.copy2(path, path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}"))
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _without_ours(entries: list) -> list:
+    return [e for e in entries or [] if "agent_hook.py" not in json.dumps(e)]
+
+
+def hook_agents() -> dict[str, dict]:
+    """agent -> how to tell it's installed, and how to add / remove Squidbrake's hook in its config."""
+    home = Path.home()
+
+    def cursor(data, cmd):
+        data.setdefault("version", 1)
+        hooks = data.setdefault("hooks", {})
+        for ev in ("beforeShellExecution", "beforeReadFile"):
+            hooks[ev] = _without_ours(hooks.get(ev)) + ([{"command": cmd, "timeout": 600, "failClosed": True}] if cmd else [])
+            if not hooks[ev]:
+                hooks.pop(ev)
+
+    def grouped(event, matcher, timeout):
+        def edit(data, cmd):
+            hooks = data.setdefault("hooks", {})
+            hooks[event] = _without_ours(hooks.get(event)) + (
+                [{"matcher": matcher, "hooks": [{"name": "squidbrake", "type": "command", "command": cmd, "timeout": timeout}]}]
+                if cmd else [])
+            if not hooks[event]:
+                hooks.pop(event)
+            if not hooks:
+                data.pop("hooks")
+        return edit
+
+    def vscode(data, cmd):
+        data.clear()
+        if cmd:
+            data["hooks"] = {"PreToolUse": [{"type": "command", "command": cmd, "timeout": 600}]}
+
+    def antigravity(data, cmd):
+        data.pop("squidbrake", None)
+        if cmd:
+            data["squidbrake"] = {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 600}]}]}
+
+    return {
+        "cursor": {"present": (home / ".cursor").exists(), "file": home / ".cursor" / "hooks.json", "edit": cursor,
+                   "covers": "terminal commands and file reads"},
+        "gemini-cli": {"present": bool(shutil.which("gemini")) or (home / ".gemini" / "settings.json").exists(),
+                       "file": home / ".gemini" / "settings.json",
+                       "edit": grouped("BeforeTool", "run_shell_command|write_file|replace|read_file|read_many_files", 600000),
+                       "covers": "shell commands, file reads, writes and edits"},
+        "codex": {"present": bool(shutil.which("codex")) or (home / ".codex").exists(), "file": home / ".codex" / "hooks.json",
+                  "edit": grouped("PreToolUse", "Bash|shell|apply_patch|Edit|Write", 600),
+                  "covers": "shell commands and edits (approve the hook once in Codex with /hooks)"},
+        "vscode": {"present": (_user_dir() / "Code" / "User").exists() or (home / ".copilot").exists(),
+                   "file": home / ".copilot" / "hooks" / "squidbrake.json", "edit": vscode,
+                   "covers": "Copilot agent mode: terminal commands, reads and edits"},
+        "antigravity": {"present": (home / ".gemini" / "antigravity").exists() or (home / ".gemini" / "config").exists(),
+                        "file": home / ".gemini" / "config" / "hooks.json", "edit": antigravity,
+                        "covers": "terminal commands, file reads and writes"},
+    }
+
+
+def agents(args) -> None:
+    """Add (or with --remove, take out) Squidbrake's pre-execution hook in every coding agent installed here."""
+    table = hook_agents()
+    chosen = [a for a in table if args.agent in ("all", a)]
+    if args.agent != "all" and not chosen:
+        sys.exit(f"no hook support for {args.agent} yet; supported: {', '.join(table)}")
+    key = None
+    for name in chosen:
+        t = table[name]
+        if not (t["present"] or args.agent == name or args.remove):
+            continue
+        try:
+            data = _read_json(t["file"])
+        except ValueError:
+            print(f"{name}: {t['file']} isn't plain JSON (comments?); skipped")
+            continue
+        if args.remove:
+            before = json.dumps(data)
+            t["edit"](data, None)
+            if json.dumps(data) != before:
+                if data:
+                    _write_json(t["file"], data)
+                else:
+                    t["file"].unlink(missing_ok=True)
+                print(f"{name}: hook removed")
+            continue
+        key = key or args.key or new_key("agents", args.url)
+        cmd = " ".join([_q(PYTHON), _q(str(AGENT_HOOK)), name, "--url", args.url, "--key", key])
+        t["edit"](data, cmd)
+        _write_json(t["file"], data)
+        print(f"{name}: hook added ({t['covers']}). Restart {name} to apply.")
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="squidbrake connect" if os.getenv("SQUIDBRAKE_CLI") else None,
                                 description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("claude-code", "mcp", "wrap"):
+    for name in ("claude-code", "mcp", "wrap", "guard", "agents"):
         s = sub.add_parser(name)
         s.add_argument("--url", default="http://localhost:8080", help="the gateway's address")
         s.add_argument("--key")
-        if name == "claude-code":
+        if name == "agents":
+            s.add_argument("--agent", default="all", help="cursor, gemini-cli, codex, vscode, antigravity, or all (every one installed)")
+            s.add_argument("--remove", action="store_true", help="take Squidbrake's hook out again")
+            s.add_argument("--yes", action="store_true")
+        elif name == "guard":
+            s.add_argument("--agent", default="all", help="cursor, windsurf, vscode, gemini-cli, antigravity, "
+                                                           "claude-desktop, or all (every one installed)")
+            s.add_argument("--remove", action="store_true", help="put the original MCP servers back")
+            s.add_argument("--yes", action="store_true")
+        elif name == "claude-code":
             s.add_argument("--project")
             s.add_argument("--remove", action="store_true")
             s.add_argument("--yes", action="store_true")
@@ -298,7 +523,7 @@ def main(argv: list[str] | None = None) -> None:
     args.url = args.url.rstrip("/")
     if args.cmd == "mcp":
         args.agent = args.name
-    {"claude-code": claude_code, "mcp": mcp, "wrap": wrap}[args.cmd](args)
+    {"claude-code": claude_code, "mcp": mcp, "wrap": wrap, "guard": guard, "agents": agents}[args.cmd](args)
 
 
 if __name__ == "__main__":

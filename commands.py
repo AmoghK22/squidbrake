@@ -251,8 +251,10 @@ def classify(words: list[str], raw: str = "", depth: int = 0) -> tuple[list[Comm
     cmd = Command(program=prog, words=words, raw=raw)
 
     # ---- shells running a string: read the string
-    if prog in SHELLS and "-c" in words[1:]:
-        inner = words[words.index("-c") + 1] if words.index("-c") + 1 < len(words) else ""
+    # -c, also combined with other short flags: `bash -lc "..."` (Codex runs every command this way), `sh -ec`, `bash -c -l`
+    c_at = next((i for i, w in enumerate(words[1:], 1) if re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", w)), None)
+    if prog in SHELLS and c_at is not None:
+        inner = next((w for w in words[c_at + 1:] if not w.startswith("-")), "")
         return _read(inner, depth + 1) if depth < 4 else ([], ["a command nested too deep to read"])
     if prog in POWERSHELLS:
         if any(w.startswith("-e") and "enc" in w or w in ("-e", "-ec") for w in lower[1:]):

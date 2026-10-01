@@ -47,9 +47,16 @@ if ($env:SQUIDBRAKE_URL -and $env:SQUIDBRAKE_AGENT_KEY) {
         Write-Host "`nCouldn't reach your dashboard with that key ($($_.Exception.Message)). Check the key and run it again." -ForegroundColor Yellow
         return
     }
-    & $sb connect claude-code --url $env:SQUIDBRAKE_URL --key $env:SQUIDBRAKE_AGENT_KEY --yes --hook-only | Out-Null
-    Write-Host "`n  [OK] Connected to your dashboard (as '$($me.client)')." -ForegroundColor Green
-    Write-Host "`nLast step: close and reopen Claude Code, then work as usual."
+    Write-Host "`n  [OK] Your dashboard answers (signed in as '$($me.client)')." -ForegroundColor Green
+    if ((Get-Command claude -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $env:USERPROFILE ".claude"))) {
+        & $sb connect claude-code --url $env:SQUIDBRAKE_URL --key $env:SQUIDBRAKE_AGENT_KEY --yes --hook-only | Out-Null
+        Write-Host "  [OK] Claude Code: every tool call (commands, edits, web, MCP) goes through it." -ForegroundColor Green
+    }
+    # every other coding agent installed here: its terminal commands and file actions (hooks) ...
+    & $sb connect agents --agent all --url $env:SQUIDBRAKE_URL --key $env:SQUIDBRAKE_AGENT_KEY --yes | ForEach-Object { Write-Host "  $_" }
+    # ... and its own MCP servers (GitHub, Stripe, databases...) go through it too
+    & $sb connect guard --agent all --url $env:SQUIDBRAKE_URL --key $env:SQUIDBRAKE_AGENT_KEY --yes | ForEach-Object { Write-Host "  $_" }
+    Write-Host "`nLast step: close and reopen your agents (Claude Code, Cursor, ...), then work as usual."
     Write-Host "Your dashboard: $($env:SQUIDBRAKE_URL)/dashboard`n"
     return
 }

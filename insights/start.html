@@ -39,6 +39,10 @@ h1 { font-size:32px; line-height:1.2; margin:18px 0 8px; letter-spacing:-.02em; 
 code { background:var(--code); padding:1px 6px; border-radius:6px; font-size:.92em; }
 a { color:var(--accent); }
 .missing { text-align:center; margin-top:80px; }
+table.cover { width:100%; border-collapse:collapse; font-size:14.5px; }
+table.cover td { padding:7px 6px; border-top:1px solid var(--line); vertical-align:top; color:var(--muted); }
+table.cover td:first-child { color:var(--ink); white-space:nowrap; width:1%; padding-right:14px; }
+table.cover tr:first-child td { border-top:0; }
 </style>
 </head>
 <body>
@@ -84,9 +88,9 @@ if (D.hosted && !D.missing) {
       <p><b>Claude Code</b>: in another terminal window:</p>
       <div class="cmd">squidbrake connect claude-code</div>
       <p class="note">Then restart Claude Code. Every tool call (commands, edits, web fetches) now goes through Squidbrake.</p>
-      <p><b>Cursor, Antigravity, Claude Desktop</b>: <code>squidbrake connect mcp --name cursor</code> prints the config to
-        paste (Antigravity: add <code>--install</code> and it's done for you). These guard the tools you route through
-        Squidbrake; the IDE's own terminal isn't covered yet.</p>
+      <p><b>Cursor, Codex, Gemini CLI, VS Code Copilot, Antigravity</b>: <code>squidbrake connect agents</code> adds
+        Squidbrake to each one installed (their terminal commands and file actions), and <code>squidbrake connect guard</code>
+        puts their MCP tools (GitHub, Stripe, databases...) behind it too. <code>--remove</code> undoes either.</p>
     </section>
 
     <section class="step try"><h2><span class="n">4</span> Use it as usual, and try these</h2>
@@ -143,9 +147,9 @@ function hostedPage() {
       <div id="keys"></div>
     </section>
 
-    <section class="step"><h2><span class="n">2</span> Connect Claude Code</h2>
-      <p>Open a terminal (Windows: <b>PowerShell</b>), paste this and press Enter. It installs what's needed, connects
-        Claude Code to your dashboard and checks that it works.</p>
+    <section class="step"><h2><span class="n">2</span> Connect your AI agents</h2>
+      <p>Open a terminal (Windows: <b>PowerShell</b>), paste this and press Enter. It installs what's needed, finds every
+        coding agent on this computer, connects each one to your dashboard and checks that it works.</p>
       <div class="tabs" role="tablist">
         <button role="tab" data-os="win">Windows</button><button role="tab" data-os="mac">macOS / Linux</button>
         <button role="tab" data-os="manual">Manual</button></div>
@@ -153,11 +157,22 @@ function hostedPage() {
       <p class="note" id="keyNote">Your agent key is filled in once you've done step 1.</p>
     </section>
 
-    <section class="step"><h2><span class="n">3</span> Restart Claude Code, and approve from your phone</h2>
-      <p>Close and reopen Claude Code. Every tool call (commands, edits, web fetches) now goes through your dashboard.</p>
+    <section class="step"><h2><span class="n">3</span> Restart your agents, and approve from your phone</h2>
+      <p>Close and reopen your agents (Claude Code, Cursor, ...). From then on their actions go through your dashboard.</p>
       <p>In the dashboard, click <b>Phone</b> and scan the QR code: held actions then reach you with one-tap Approve / Reject.</p>
-      <p class="note">Using Cursor, Antigravity or Claude Desktop?
-        <code>squidbrake connect mcp --name cursor --url ${esc(D.dashboard)} --key &lt;agent key&gt;</code> prints the config to paste.</p>
+    </section>
+
+    <section class="step"><h2>What gets checked, per agent</h2>
+      <table class="cover">
+        <tr><td><b>Claude Code</b></td><td>everything: commands, edits, file reads, web fetches, MCP tools</td></tr>
+        <tr><td><b>Cursor</b></td><td>terminal commands, file reads, MCP tools</td></tr>
+        <tr><td><b>Codex CLI</b></td><td>shell commands, edits, MCP tools <span class="sub">(approve the hook once in Codex: <code>/hooks</code>)</span></td></tr>
+        <tr><td><b>Gemini CLI</b></td><td>shell commands, file reads, writes and edits, MCP tools</td></tr>
+        <tr><td><b>VS Code Copilot</b></td><td>agent mode: terminal commands, reads, edits, MCP tools</td></tr>
+        <tr><td><b>Antigravity</b></td><td>terminal commands, file reads and writes, MCP tools</td></tr>
+        <tr><td><b>Windsurf, Kiro, Claude Desktop</b></td><td>MCP tools (GitHub, Stripe, databases...); their own terminal isn't covered yet</td></tr>
+      </table>
+      <p class="note">The installer sets up whichever of these it finds. Added an agent later? Run the step 2 line again.</p>
     </section>
 
     <section class="step try"><h2>Try these</h2>

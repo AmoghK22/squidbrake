@@ -129,6 +129,13 @@ def prompt(ev: dict, http: httpx.Client) -> None:
         pass
 
 
+def _cursor_has_own_hook() -> bool:
+    try:
+        return "agent_hook.py" in (Path.home() / ".cursor" / "hooks.json").read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
 def main() -> None:
     try:
         ev = json.load(sys.stdin)
@@ -136,6 +143,8 @@ def main() -> None:
         sys.exit(0)
     if str(ev.get("tool_name", "")).startswith(SKIP_PREFIXES):
         sys.exit(0)
+    if ev.get("cursor_version") and _cursor_has_own_hook():
+        sys.exit(0)   # Cursor runs Claude Code's hooks too; its own Squidbrake hook (agent_hook.py) covers it already
     with httpx.Client(base_url=GATEWAY_URL, headers={"X-Gateway-Key": GATEWAY_API_KEY}, timeout=10) as http:
         if ev.get("hook_event_name") == "PreToolUse":
             pre(ev, http)

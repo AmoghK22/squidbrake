@@ -32,8 +32,16 @@ if [ -n "$SQUIDBRAKE_URL" ] && [ -n "$SQUIDBRAKE_AGENT_KEY" ]; then
   if ! curl -fsS -m 20 -H "X-Gateway-Key: $SQUIDBRAKE_AGENT_KEY" "$SQUIDBRAKE_URL/v1/me" >/dev/null; then
     echo "Couldn't reach your dashboard with that key. Check the key and run it again."; exit 1
   fi
-  "$SB" connect claude-code --url "$SQUIDBRAKE_URL" --key "$SQUIDBRAKE_AGENT_KEY" --yes --hook-only >/dev/null
-  printf '\n  [OK] Connected to your dashboard.\n\nLast step: close and reopen Claude Code, then work as usual.\nYour dashboard: %s/dashboard\n\n' "$SQUIDBRAKE_URL"
+  printf '\n  [OK] Your dashboard answers.\n'
+  if command -v claude >/dev/null 2>&1 || [ -d "$HOME/.claude" ]; then
+    "$SB" connect claude-code --url "$SQUIDBRAKE_URL" --key "$SQUIDBRAKE_AGENT_KEY" --yes --hook-only >/dev/null
+    printf '  [OK] Claude Code: every tool call (commands, edits, web, MCP) goes through it.\n'
+  fi
+  # every other coding agent installed here: its terminal commands and file actions (hooks) ...
+  "$SB" connect agents --agent all --url "$SQUIDBRAKE_URL" --key "$SQUIDBRAKE_AGENT_KEY" --yes | sed 's/^/  /'
+  # ... and its own MCP servers (GitHub, Stripe, databases...) go through it too
+  "$SB" connect guard --agent all --url "$SQUIDBRAKE_URL" --key "$SQUIDBRAKE_AGENT_KEY" --yes | sed 's/^/  /'
+  printf '\nLast step: close and reopen your agents (Claude Code, Cursor, ...), then work as usual.\nYour dashboard: %s/dashboard\n\n' "$SQUIDBRAKE_URL"
   exit 0
 fi
 
