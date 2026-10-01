@@ -5,7 +5,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](requirements.txt)
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](#2-connect-real-agents)
 
-![Demo: an AI agent's scam wire is blocked, a refund waits for approval and is approved from a phone](docs/demo.gif)
+![Demo: an AI agent's scam wire is blocked, a refund waits for approval and is approved from a phone](https://raw.githubusercontent.com/batrapulkit/squidbrake/main/docs/demo.gif)
 
 **Brakes for your AI agents.** Every action an agent takes (running a command, editing a file, sending an
 email, issuing a refund, changing a database) goes through Squidbrake first. It is **checked** against your
@@ -37,12 +37,12 @@ See [SHOWCASE.md](SHOWCASE.md) for a 5-minute demo with a sandbox company, and [
 AI-agent incidents replayed against the shipped rules** (Replit, the Railway volume deletion, GitHub MCP, Supabase
 MCP, Claude Code and Antigravity deletes...): 11 of 11 harmful actions stopped, checked in CI.
 
-![Squidbrake dashboard: a git push and a refund wait for approval, while a scam wire transfer was blocked](docs/dashboard.png)
+![Squidbrake dashboard: a git push and a refund wait for approval, while a scam wire transfer was blocked](https://raw.githubusercontent.com/batrapulkit/squidbrake/main/docs/dashboard.png)
 
 <table><tr>
-<td width="62%"><img src="docs/blocked-scam.png" alt="A $24,800 wire blocked because it follows an email from a look-alike domain"><br>
+<td width="62%"><img src="https://raw.githubusercontent.com/batrapulkit/squidbrake/main/docs/blocked-scam.png" alt="A $24,800 wire blocked because it follows an email from a look-alike domain"><br>
 <sub>An agent read an "urgent CEO" email from <code>acrne-corp.com</code> and tried to wire $24,800. Blocked, with the story of what led to it.</sub></td>
-<td width="38%"><img src="docs/phone-approval.png" alt="One-tap approval on a phone"><br>
+<td width="38%"><img src="https://raw.githubusercontent.com/batrapulkit/squidbrake/main/docs/phone-approval.png" alt="One-tap approval on a phone"><br>
 <sub>Approve or reject from your phone with one tap.</sub></td>
 </tr></table>
 
@@ -58,16 +58,23 @@ manager approves or rejects them. If the editor asks whether to allow tasks that
 ## Try it in 30 seconds
 
 ```bash
-git clone https://github.com/batrapulkit/squidbrake && cd squidbrake
-./start.sh          # Windows: start.bat
+pipx install squidbrake           # or: pip install squidbrake
+squidbrake                        # prints your keys and opens the dashboard
 ```
 
-It installs itself, prints your keys and opens the dashboard. Then connect Claude Code (every tool call goes
-through Squidbrake from then on):
+Then connect Claude Code, so every tool call goes through Squidbrake from then on. Either as a plugin, from inside
+Claude Code (it asks for the agent key the gateway printed; see [plugin/](plugin/)):
 
-```bash
-./connect.sh claude-code          # Windows: connect.bat claude-code
 ```
+/plugin marketplace add batrapulkit/squidbrake
+/plugin install squidbrake@squidbrake
+```
+
+or from the terminal: `squidbrake connect claude-code`. Your rules, keys and data live in `~/.squidbrake`;
+edit `~/.squidbrake/rules.yaml` and changes apply at once.
+
+From a clone instead: `git clone https://github.com/batrapulkit/squidbrake && cd squidbrake`, then `./start.sh`
+(Windows: `start.bat`) and `./connect.sh claude-code` (Windows: `connect.bat claude-code`).
 
 Or with Docker: `docker run -d -p 8080:8080 -v squidbrake-data:/app/data --name squidbrake ghcr.io/batrapulkit/squidbrake`
 (keys: `docker logs squidbrake`).
@@ -89,7 +96,8 @@ Changes apply immediately, no restart needed. (Inside Docker, prefix with `docke
 
 ## 2. Connect real agents
 
-With the gateway running, one command per agent (use the `.venv` Python that `start.bat` / `start.sh` created):
+With the gateway running, one command per agent (installed with pip, type `squidbrake connect ...` instead;
+from a clone, use the `.venv` Python that `start.bat` / `start.sh` created):
 
 ```bash
 .venv/Scripts/python connect.py claude-code          # Windows (macOS/Linux: .venv/bin/python)

@@ -14,3 +14,27 @@ jobs:
       - run: pip install -r requirements.txt pytest
       - run: pytest -q
       - run: python tests/e2e_business_scenario.py
+
+  package:
+    # what `pip install squidbrake` gets: build the wheel, install it on its own, start it, block something
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build && python -m build
+      - run: python -m venv /tmp/pkg && /tmp/pkg/bin/pip install dist/*.whl
+      - name: start the installed gateway and send it a dangerous command
+        env:
+          SQUIDBRAKE_HOME: /tmp/sbhome
+          GATEWAY_AUTH: "off"
+        run: |
+          cd /tmp
+          /tmp/pkg/bin/squidbrake --version
+          /tmp/pkg/bin/squidbrake run --port 8099 --no-browser &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8099/health && break; sleep 1; done
+          test -f /tmp/sbhome/rules.yaml
+          curl -sf -X POST http://127.0.0.1:8099/v1/events -H 'Content-Type: application/json' \
+            -d '{"name":"Bash","input":{"command":"rm -rf ~/"}}' | tee /tmp/out.json
+          grep -q '"decision":"deny"' /tmp/out.json

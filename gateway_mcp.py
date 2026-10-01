@@ -29,7 +29,9 @@ import gw_async as gw
 from gw_async import log
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = Path(os.getenv("DB_PATH", BASE_DIR / "data" / "shop.db"))
+HOME_DIR = Path(os.getenv("SQUIDBRAKE_HOME") or  # same place as server.py: ~/.squidbrake when installed with pip
+                (Path.home() / ".squidbrake" if (BASE_DIR / "__init__.py").exists() else BASE_DIR))
+DB_PATH = Path(os.getenv("DB_PATH", HOME_DIR / "data" / "shop.db"))
 MAX_ROWS = 200
 
 

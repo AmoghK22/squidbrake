@@ -1,0 +1,20 @@
+name: publish to PyPI
+# Runs when a GitHub release is published. Uses PyPI trusted publishing: no API token is stored anywhere.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # lets PyPI verify this workflow instead of a password or token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build && python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1

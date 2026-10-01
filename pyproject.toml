@@ -1,0 +1,74 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "squidbrake"
+dynamic = ["version"]
+description = "Brakes for AI agents: every tool call is checked against your rules, risky ones wait for a human, and everything lands in a tamper-evident audit trail."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Pulkit Batra" }]
+keywords = ["ai-agents", "mcp", "claude-code", "guardrails", "human-in-the-loop", "approval", "audit", "security"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Web Environment",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: Security",
+  "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "sqlalchemy>=2.0",
+  "httpx>=0.27",
+  "pyyaml>=6.0",
+  "python-dotenv>=1.0",
+  "mcp>=2.2,<3",
+  "segno>=1.6",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1"]
+
+[project.scripts]
+squidbrake = "squidbrake.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/batrapulkit/squidbrake"
+Source = "https://github.com/batrapulkit/squidbrake"
+Issues = "https://github.com/batrapulkit/squidbrake/issues"
+Demo = "https://codespaces.new/batrapulkit/squidbrake"
+
+[tool.hatch.version]
+path = "squidbrake/__init__.py"
+
+# The gateway is a set of plain scripts in the repo root (python server.py, python connect.py ...).
+# The wheel puts them inside the squidbrake package so they don't clash with other top-level modules.
+[tool.hatch.build.targets.wheel]
+packages = ["squidbrake"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"server.py" = "squidbrake/server.py"
+"commands.py" = "squidbrake/commands.py"
+"taint.py" = "squidbrake/taint.py"
+"verify.py" = "squidbrake/verify.py"
+"connect.py" = "squidbrake/connect.py"
+"claude_hook.py" = "squidbrake/claude_hook.py"
+"gw_async.py" = "squidbrake/gw_async.py"
+"gateway_proxy.py" = "squidbrake/gateway_proxy.py"
+"gateway_mcp.py" = "squidbrake/gateway_mcp.py"
+"demo_apps_mcp.py" = "squidbrake/demo_apps_mcp.py"
+"client.py" = "squidbrake/client.py"
+"rules.yaml" = "squidbrake/rules.yaml"
+"dashboard.html" = "squidbrake/dashboard.html"
+"approve.html" = "squidbrake/approve.html"
+
+[tool.hatch.build.targets.sdist]
+only-include = ["squidbrake", "server.py", "commands.py", "taint.py", "verify.py", "connect.py", "claude_hook.py",
+                "gw_async.py", "gateway_proxy.py", "gateway_mcp.py", "demo_apps_mcp.py", "client.py", "rules.yaml",
+                "dashboard.html", "approve.html", "README.md", "LICENSE", "pyproject.toml"]

@@ -64,20 +64,34 @@ import verify
 
 # --------------------------------------------------------------------------- config
 
-# Every setting is optional. A .env file next to this one is picked up automatically.
+# Defaults live next to this file, so it doesn't matter which folder you start it from.
+# Installed with pip (the package has an __init__.py), they live in ~/.squidbrake instead.
+BASE_DIR = Path(__file__).resolve().parent
+HOME_DIR = Path(os.getenv("SQUIDBRAKE_HOME") or
+                (Path.home() / ".squidbrake" if (BASE_DIR / "__init__.py").exists() else BASE_DIR))
+
+# Every setting is optional. A .env file there is picked up automatically.
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).with_name(".env"))
+    load_dotenv(HOME_DIR / ".env")
 except ImportError:
     pass
 
-# Defaults live next to this file, so it doesn't matter which folder you start it from.
-BASE_DIR = Path(__file__).resolve().parent
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(BASE_DIR / 'data' / 'gateway.db').as_posix()}")
-KEYS_PATH = Path(os.getenv("KEYS_PATH", BASE_DIR / "data" / "keys.json"))
+
+def _default_rules() -> Path:
+    """rules.yaml in HOME_DIR; a pip install starts from a copy of the shipped one, which you then edit."""
+    path = HOME_DIR / "rules.yaml"
+    if not path.exists() and (BASE_DIR / "rules.yaml").exists() and HOME_DIR != BASE_DIR:
+        HOME_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((BASE_DIR / "rules.yaml").read_bytes())
+    return path
+
+
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(HOME_DIR / 'data' / 'gateway.db').as_posix()}")
+KEYS_PATH = Path(os.getenv("KEYS_PATH", HOME_DIR / "data" / "keys.json"))
 AUTH_DISABLED = os.getenv("GATEWAY_AUTH", "on").strip().lower() in ("off", "disabled", "false", "0", "no")
 IN_DOCKER = bool(os.getenv("IN_DOCKER"))
-RULES_PATH = Path(os.getenv("RULES_PATH", BASE_DIR / "rules.yaml"))
+RULES_PATH = Path(os.getenv("RULES_PATH") or _default_rules())
 MAX_PAYLOAD_CHARS = int(os.getenv("MAX_PAYLOAD_CHARS", "65536"))
 RETENTION_DAYS = int(os.getenv("RETENTION_DAYS", "0"))  # 0 = keep forever
 PROXY_TIMEOUT = float(os.getenv("PROXY_TIMEOUT", "60"))
@@ -2128,14 +2142,14 @@ async def proxy(upstream: str, path: str, request: Request, client: str = Depend
 
 # --------------------------------------------------------------------------- command line
 
-CLI = "docker compose exec gateway python server.py" if IN_DOCKER else "python server.py"
+CLI = os.getenv("SQUIDBRAKE_CLI") or ("docker compose exec gateway python server.py" if IN_DOCKER else "python server.py")
 
 
 def print_banner(url: str | None, created: dict[str, str] | None) -> None:
     bar = "=" * 72
     lines = ["", bar, "  Squidbrake is running" if url else "  Squidbrake"]
     if url:
-        lines += [f"  Dashboard:  {url}/dashboard"]
+        lines += [f"  Dashboard:  {url}/dashboard", f"  Rules:      {RULES_PATH}   (edit it; changes apply at once)"]
     if created:
         lines += [
             "",
@@ -2220,7 +2234,7 @@ def _cli_run(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="server.py", description="Squidbrake. With no command, starts the server.")
+    p = argparse.ArgumentParser(prog="squidbrake" if CLI == "squidbrake" else "server.py", description="Squidbrake. With no command, starts the server.")
     sub = p.add_subparsers(dest="cmd", metavar="COMMAND")
     r = sub.add_parser("run", help="start the server (default)")
     r.add_argument("--host", default=os.getenv("HOST", "127.0.0.1"),

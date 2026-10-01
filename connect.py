@@ -1,5 +1,6 @@
 """
 Connect an AI agent to Squidbrake in one command.
+(Installed with pip? Type `squidbrake connect ...` wherever this says `python connect.py ...`.)
 
   python connect.py claude-code            Claude Code: every tool call goes through the gateway (hook)
                                            + database tools (MCP)
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -250,8 +252,9 @@ def wrap(args) -> None:
             f"Its {app} tools now go through the gateway (shown as {app}.<tool>); watch at {args.url}/dashboard")
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(argv: list[str] | None = None) -> None:
+    p = argparse.ArgumentParser(prog="squidbrake connect" if os.getenv("SQUIDBRAKE_CLI") else None,
+                                description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
     for name in ("claude-code", "mcp", "wrap"):
         s = sub.add_parser(name)
@@ -274,7 +277,7 @@ def main() -> None:
             s.add_argument("--project", help="claude-code: only for this project folder")
             s.add_argument("--install", action="store_true", help="antigravity: write it into its config")
             s.add_argument("command", nargs=argparse.REMAINDER, help="-- then the app's MCP server command")
-    args = p.parse_args()
+    args = p.parse_args(argv)
     args.url = args.url.rstrip("/")
     if args.cmd == "mcp":
         args.agent = args.name

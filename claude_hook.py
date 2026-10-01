@@ -9,7 +9,7 @@ through Squidbrake before it runs, and reports the result afterwards.
 
 It also records what you ask (UserPromptSubmit), so the gateway can tell addresses you gave from ones a web page gave.
 
-Install it with:  python connect.py claude-code
+Install it with:  python connect.py claude-code   (or the Claude Code plugin: see plugin/README.md)
 Settings (env vars, set by connect.py in the hook command):
   GATEWAY_URL, GATEWAY_API_KEY, GATEWAY_SOURCE (default "claude-code"),
   GATEWAY_FAIL_OPEN=1 to let calls run when the gateway is unreachable (default: block them)
@@ -27,9 +27,11 @@ import httpx
 
 def _arg(flag: str, env: str, default: str) -> str:
     # Claude Code hook config has no env field, so connect.py passes settings as arguments.
+    # Installed as a Claude Code plugin, they come from the plugin's settings instead.
     if flag in sys.argv[1:-1]:
         return sys.argv[sys.argv.index(flag) + 1]
-    return os.getenv(env, default)
+    plugin_option = {"GATEWAY_URL": "CLAUDE_PLUGIN_OPTION_GATEWAY_URL", "GATEWAY_API_KEY": "CLAUDE_PLUGIN_OPTION_API_KEY"}.get(env)
+    return os.getenv(env) or (plugin_option and os.getenv(plugin_option)) or default
 
 
 GATEWAY_URL = _arg("--url", "GATEWAY_URL", "http://localhost:8080").rstrip("/")
@@ -89,7 +91,7 @@ def pre(ev: dict, http: httpx.Client) -> None:
         if by and by != "timeout":
             note = f' Note: "{d["decision_note"]}".' if d.get("decision_note") else ""
             deny(f"Squidbrake: rejected by {by}.{note} Don't retry it; ask the user how to proceed.")
-        deny(f"Squidbrake blocked this (rule '{d.get('rule_id')}'): {d.get('reason')}. Don't try to work around it.")
+        deny(f"Squidbrake blocked this (rule '{d.get('rule_id')}'): {(d.get('reason') or '').rstrip('.')}. Don't try to work around it.")
 
     # Allowed: remember the event so PostToolUse can attach the result, then let Claude Code continue normally.
     if ev.get("tool_use_id"):

@@ -1,0 +1,14 @@
+{
+  "name": "squidbrake",
+  "description": "Squidbrake: brakes for AI agents. Every tool call checked against your rules, risky ones wait for a human.",
+  "owner": { "name": "Pulkit Batra", "url": "https://github.com/batrapulkit" },
+  "plugins": [
+    {
+      "name": "squidbrake",
+      "source": "./plugin",
+      "description": "Brakes for Claude Code: destructive commands blocked, risky ones wait for your approval, everything audited.",
+      "homepage": "https://github.com/batrapulkit/squidbrake",
+      "license": "Apache-2.0"
+    }
+  ]
+}

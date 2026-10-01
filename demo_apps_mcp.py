@@ -19,7 +19,9 @@ from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
-STATE = Path(os.getenv("ACME_STATE", Path(__file__).resolve().parent / "data" / "sandbox" / "acme.json"))
+_HERE = Path(__file__).resolve().parent
+_HOME = Path(os.getenv("SQUIDBRAKE_HOME") or (Path.home() / ".squidbrake" if (_HERE / "__init__.py").exists() else _HERE))
+STATE = Path(os.getenv("ACME_STATE", _HOME / "data" / "sandbox" / "acme.json"))
 
 
 def _now(days: float = 0) -> str:

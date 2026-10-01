@@ -1,0 +1,22 @@
+{
+  "description": "Send every Claude Code tool call through Squidbrake before it runs, and record the result.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "squidbrake", "args": ["hook"], "timeout": 600 }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "squidbrake", "args": ["hook"], "timeout": 30 }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "squidbrake", "args": ["hook"], "timeout": 15 }]
+      }
+    ]
+  }
+}
