@@ -140,6 +140,9 @@ def claude_code(args) -> None:
         shutil.copy2(path, path.with_name(f"settings.json.bak-{time.strftime('%Y%m%d-%H%M%S')}"))
     path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     print(f"Added the hook to {path}")
+    if args.hook_only:
+        print(f"\nDone. Restart Claude Code; every tool call now goes through {args.url}/dashboard")
+        return
 
     entry = mcp_entry(args.url, key, "claude-code")
     cmd = [claude or "claude", "mcp", "add", "--transport", "stdio", MCP_NAME, *scope,
@@ -277,6 +280,7 @@ def main(argv: list[str] | None = None) -> None:
             s.add_argument("--project")
             s.add_argument("--remove", action="store_true")
             s.add_argument("--yes", action="store_true")
+            s.add_argument("--hook-only", action="store_true", help="just the hook, without the demo database tools")
         elif name == "mcp":
             s.add_argument("--name", default="mcp-agent", help="antigravity, claude-desktop, cursor, or any label")
             s.add_argument("--install", action="store_true", help="antigravity: write it into its config")

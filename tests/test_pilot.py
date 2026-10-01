@@ -16,6 +16,8 @@ if "server" not in sys.modules:   # run on its own: a throwaway database (test_s
     os.environ.setdefault("GATEWAY_APPROVERS", "boss,boss2")
 os.environ["INSIGHTS_DB"] = str(Path(tempfile.mkdtemp()) / "insights.db")
 os.environ["INSIGHTS_ADMIN_KEY"] = "admin-test-key"
+os.environ["HOSTED_DOMAIN"] = "app.example.com"
+os.environ["HOSTED_MAX"] = "2"
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
@@ -82,3 +84,40 @@ def test_join_ping_leave(insights, tmp_path, monkeypatch):
     assert pilot.leave(tmp_path) == 0 and pilot.load(tmp_path) is None
     again = {"code": code, "install_id": cfg["install_id"], "usage": usage}
     assert insights.post("/v1/ping", json=again).status_code == 403
+
+
+def test_hosted_pilot_lifecycle(insights):
+    admin = {"X-Admin-Key": "admin-test-key"}
+    r = insights.post("/v1/admin/pilots", headers=admin, json={"company": "Hosted Co", "hosted": True}).json()
+    code, dash = r["code"], r["dashboard"]
+    assert dash == "https://hosted-co.app.example.com"
+    # Caddy may only get certificates for hosted pilots that exist
+    assert insights.get("/v1/caddy/ask", params={"domain": "hosted-co.app.example.com"}).status_code == 200
+    assert insights.get("/v1/caddy/ask", params={"domain": "evil.app.example.com"}).status_code == 404
+    assert insights.get("/v1/caddy/ask", params={"domain": "hosted-co.app.example.com.attacker.io"}).status_code == 404
+    # the provisioner sees it, starts it and reports the keys; the keys are never in the admin overview
+    q = insights.get("/v1/admin/provision", headers=admin).json()["pilots"]
+    assert any(p["code"] == code and p["state"] == "requested" for p in q)
+    assert insights.get("/v1/admin/provision").status_code == 401
+    assert insights.post("/v1/admin/provisioned", json={"code": code, "state": "running"}).status_code == 401
+    insights.post("/v1/admin/provisioned", headers=admin, json={"code": code, "state": "running",
+                                                                "admin_key": "gw_admin_xyz", "agent_key": "gw_agent_xyz"})
+    overview = insights.get("/v1/admin/overview", headers=admin).text
+    assert "gw_admin_xyz" not in overview and "gw_agent_xyz" not in overview
+    # the founder's page shows them once
+    k = insights.post(f"/v1/pilot/{code}/keys").json()
+    assert k["admin_key"] == "gw_admin_xyz" and k["agent_key"] == "gw_agent_xyz" and k["dashboard"] == dash
+    assert insights.post(f"/v1/pilot/{code}/keys").status_code == 409
+    # slots are limited (HOSTED_MAX=2 here)
+    insights.post("/v1/admin/pilots", headers=admin, json={"company": "Second", "hosted": True})
+    assert insights.post("/v1/admin/pilots", headers=admin, json={"company": "Third", "hosted": True}).status_code == 409
+    # deleting waits for the provisioner to remove the gateway
+    assert insights.delete(f"/v1/admin/pilots/{code}", headers=admin).json() == {"deleting": code}
+    assert insights.get("/v1/caddy/ask", params={"domain": "hosted-co.app.example.com"}).status_code == 404
+    insights.post("/v1/admin/provisioned", headers=admin, json={"code": code, "state": "deleted"})
+    assert all(p["code"] != code for p in insights.get("/v1/admin/overview", headers=admin).json()["pilots"])
+
+
+def test_pilot_server_must_be_https_or_internal(tmp_path):
+    for bad in ("http://pilots.example.com", "ftp://x", ""):
+        assert pilot.join(tmp_path, "c", bad, True, "1") == 2

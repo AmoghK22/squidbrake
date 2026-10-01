@@ -54,6 +54,15 @@ with db() as _c:
     CREATE TABLE IF NOT EXISTS days (install_id TEXT NOT NULL, day TEXT NOT NULL, counts TEXT NOT NULL,
         PRIMARY KEY (install_id, day));
     """)
+    # hosted pilots: their own gateway at <subdomain>.<HOSTED_DOMAIN>, started by provision.py on the server
+    _have = {r[1] for r in _c.execute("PRAGMA table_info(pilots)")}
+    for _col, _type in (("hosted", "INTEGER NOT NULL DEFAULT 0"), ("subdomain", "TEXT"), ("state", "TEXT"),
+                        ("admin_key", "TEXT"), ("agent_key", "TEXT"), ("keys_revealed_at", "TEXT"), ("error", "TEXT")):
+        if _col not in _have:
+            _c.execute(f"ALTER TABLE pilots ADD COLUMN {_col} {_type}")
+
+HOSTED_DOMAIN = os.getenv("HOSTED_DOMAIN", "")        # e.g. app.squidbrake.com (with a *.app wildcard DNS record)
+HOSTED_MAX = int(os.getenv("HOSTED_MAX", "6"))         # each hosted gateway uses ~50-100 MB of memory
 
 
 def now() -> str:
@@ -145,26 +154,105 @@ class PilotIn(BaseModel):
     company: str = Field(min_length=1, max_length=80)
     contact: str = Field(default="", max_length=120)
     note: str = Field(default="", max_length=500)
+    hosted: bool = False
+
+
+def dashboard_url(subdomain: str | None) -> str | None:
+    return f"https://{subdomain}.{HOSTED_DOMAIN}" if subdomain and HOSTED_DOMAIN else None
 
 
 @app.post("/v1/admin/pilots", dependencies=[Depends(admin)])
 def create_pilot(p: PilotIn, request: Request):
-    slug = re.sub(r"[^a-z0-9]+", "-", p.company.lower()).strip("-")[:20] or "pilot"
+    slug = re.sub(r"[^a-z0-9]+", "-", p.company.lower()).strip("-")[:20].strip("-") or "pilot"
     code = f"{slug}-{secrets.token_hex(3)}"
     with _lock, db() as c:
-        c.execute("INSERT INTO pilots (code, company, contact, note, created_at) VALUES (?,?,?,?,?)",
-                  (code, p.company, p.contact, p.note, now()))
-    return {"code": code, "link": f"{public_url(request)}/start/{code}"}
+        sub = None
+        if p.hosted:
+            if not HOSTED_DOMAIN:
+                raise HTTPException(400, "hosted pilots need HOSTED_DOMAIN set on the insights server")
+            live = c.execute("SELECT COUNT(*) FROM pilots WHERE hosted=1 AND state != 'deleting'").fetchone()[0]
+            if live >= HOSTED_MAX:
+                raise HTTPException(409, f"all {HOSTED_MAX} hosted slots are in use: delete one, or raise HOSTED_MAX "
+                                         "if the server has the memory")
+            taken = {r[0] for r in c.execute("SELECT subdomain FROM pilots WHERE subdomain IS NOT NULL")}
+            sub = slug if slug not in taken and slug not in ("www", "admin", "pilots", "app") else f"{slug}-{secrets.token_hex(2)}"
+        c.execute("INSERT INTO pilots (code, company, contact, note, created_at, hosted, subdomain, state) VALUES (?,?,?,?,?,?,?,?)",
+                  (code, p.company, p.contact, p.note, now(), int(p.hosted), sub, "requested" if p.hosted else None))
+    return {"code": code, "link": f"{public_url(request)}/start/{code}", "dashboard": dashboard_url(sub)}
+
+
+def _forget(c, code: str) -> None:
+    ids = [r[0] for r in c.execute("SELECT install_id FROM installs WHERE code=?", (code,))]
+    c.executemany("DELETE FROM days WHERE install_id=?", [(i,) for i in ids])
+    c.execute("DELETE FROM installs WHERE code=?", (code,))
+    c.execute("DELETE FROM pilots WHERE code=?", (code,))
 
 
 @app.delete("/v1/admin/pilots/{code}", dependencies=[Depends(admin)])
 def delete_pilot(code: str):
     with _lock, db() as c:
-        ids = [r[0] for r in c.execute("SELECT install_id FROM installs WHERE code=?", (code,))]
-        c.executemany("DELETE FROM days WHERE install_id=?", [(i,) for i in ids])
-        c.execute("DELETE FROM installs WHERE code=?", (code,))
-        c.execute("DELETE FROM pilots WHERE code=?", (code,))
+        p = c.execute("SELECT hosted FROM pilots WHERE code=?", (code,)).fetchone()
+        if p and p["hosted"]:   # provision.py removes its gateway first, then the row goes
+            c.execute("UPDATE pilots SET state='deleting', admin_key=NULL, agent_key=NULL WHERE code=?", (code,))
+            return {"deleting": code}
+        _forget(c, code)
     return {"deleted": code}
+
+
+# ---- hosted gateways: provision.py (on the server, with Docker) asks what to do and reports back
+
+@app.get("/v1/admin/provision", dependencies=[Depends(admin)])
+def provision_queue():
+    with db() as c:
+        rows = c.execute("SELECT code, subdomain, state FROM pilots WHERE hosted=1").fetchall()
+    return {"domain": HOSTED_DOMAIN, "pilots": [dict(r) | {"dashboard": dashboard_url(r["subdomain"])} for r in rows]}
+
+
+class ProvisionedIn(BaseModel):
+    code: str
+    state: str = Field(pattern="^(running|failed|deleted)$")
+    admin_key: str | None = Field(default=None, max_length=120)
+    agent_key: str | None = Field(default=None, max_length=120)
+    error: str | None = Field(default=None, max_length=1000)
+
+
+@app.post("/v1/admin/provisioned", dependencies=[Depends(admin)])
+def provisioned(p: ProvisionedIn):
+    with _lock, db() as c:
+        if p.state == "deleted":
+            _forget(c, p.code)
+        elif p.state == "running":
+            c.execute("UPDATE pilots SET state='running', error=NULL, admin_key=COALESCE(?, admin_key), "
+                      "agent_key=COALESCE(?, agent_key) WHERE code=? AND state != 'deleting'",
+                      (p.admin_key, p.agent_key, p.code))
+        else:
+            c.execute("UPDATE pilots SET state='failed', error=? WHERE code=?", (p.error, p.code))
+    return {"ok": True}
+
+
+@app.get("/v1/caddy/ask")
+def caddy_ask(domain: str = ""):
+    """Caddy asks before getting a certificate for <sub>.HOSTED_DOMAIN: only for hosted pilots that exist."""
+    sub = domain.removesuffix("." + HOSTED_DOMAIN) if HOSTED_DOMAIN and domain.endswith("." + HOSTED_DOMAIN) else None
+    with db() as c:
+        ok = bool(sub) and c.execute("SELECT 1 FROM pilots WHERE subdomain=? AND state IN ('requested','running')",
+                                     (sub,)).fetchone()
+    if not ok:
+        raise HTTPException(404)
+    return {"ok": True}
+
+
+@app.post("/v1/pilot/{code}/keys")
+def reveal_keys(code: str):
+    """The founder's keys for their hosted gateway, shown once on their start page and then forgotten here."""
+    with _lock, db() as c:
+        p = c.execute("SELECT * FROM pilots WHERE code=? AND hosted=1", (code,)).fetchone()
+        if not p:
+            raise HTTPException(404)
+        if not p["admin_key"]:
+            raise HTTPException(409, "already shown" if p["keys_revealed_at"] else "your dashboard is still being set up")
+        c.execute("UPDATE pilots SET admin_key=NULL, agent_key=NULL, keys_revealed_at=? WHERE code=?", (now(), code))
+    return {"dashboard": dashboard_url(p["subdomain"]), "admin_key": p["admin_key"], "agent_key": p["agent_key"]}
 
 
 SUMS = ("events", "allowed", "held", "approved", "rejected", "blocked", "timed_out", "failed", "would_block", "would_hold")
@@ -200,7 +288,11 @@ def overview(request: Request):
         last = max((i["last_seen"] or "" for i in active), default="")
         stage = ("left" if mine and not active else "active" if seen_within(last, 48) and week["events"] else
                  "quiet" if last else "installed" if active else "opened link" if p["page_views"] else "link sent")
-        out.append({**p, "link": f"{public_url(request)}/start/{p['code']}", "stage": stage, "installs": len(active),
+        keys_waiting = bool(p.pop("admin_key", None)); p.pop("agent_key", None)   # never sent to the browser
+        if p["hosted"] and p["state"] != "running" and stage in ("link sent", "opened link"):
+            stage = {"requested": "setting up", "failed": "setup failed", "deleting": "deleting"}.get(p["state"], stage)
+        out.append({**p, "dashboard": dashboard_url(p["subdomain"]), "keys_waiting": keys_waiting,
+                    "link": f"{public_url(request)}/start/{p['code']}", "stage": stage, "installs": len(active),
                     "last_seen": last or None, "versions": sorted({i["version"] for i in active if i["version"]}),
                     "modes": sorted({i["mode"] for i in active if i["mode"]}), "agents": agents,
                     "rules_hit": dict(sorted(hits.items(), key=lambda kv: -kv[1])[:6]), "week": week,
@@ -225,7 +317,9 @@ def start_page(code: str, request: Request):
             return HTMLResponse(PAGE("start.html").replace("__DATA__", json.dumps({"missing": True})), status_code=404)
         c.execute("UPDATE pilots SET page_views=page_views+1, first_view=COALESCE(first_view, ?), last_view=? WHERE code=?",
                   (now(), now(), code))
-    data = {"company": p["company"], "code": code, "server": public_url(request), "contact": CONTACT}
+    data = {"company": p["company"], "code": code, "server": public_url(request), "contact": CONTACT,
+            "hosted": bool(p["hosted"]), "dashboard": dashboard_url(p["subdomain"]), "state": p["state"],
+            "keys_ready": bool(p["admin_key"]), "keys_shown": bool(p["keys_revealed_at"])}
     return HTMLResponse(PAGE("start.html").replace("__DATA__", json.dumps(data).replace("</", "<\\/")))
 
 

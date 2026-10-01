@@ -90,6 +90,7 @@ def _default_rules() -> Path:
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(HOME_DIR / 'data' / 'gateway.db').as_posix()}")
 KEYS_PATH = Path(os.getenv("KEYS_PATH", HOME_DIR / "data" / "keys.json"))
+PILOT_DIR = KEYS_PATH.parent          # pilot.json (squidbrake pilot join) lives with the keys: writable, also in Docker
 AUTH_DISABLED = os.getenv("GATEWAY_AUTH", "on").strip().lower() in ("off", "disabled", "false", "0", "no")
 IN_DOCKER = bool(os.getenv("IN_DOCKER"))
 RULES_PATH = Path(os.getenv("RULES_PATH") or _default_rules())
@@ -1522,7 +1523,7 @@ async def lifespan(app: FastAPI):
     if RETENTION_DAYS > 0:
         tasks.append(asyncio.create_task(_retention_loop()))
     # usage counts for the pilot programme: does nothing unless this install joined one (squidbrake pilot join)
-    tasks.append(asyncio.create_task(pilot.loop(HOME_DIR, lambda: pilot.usage(
+    tasks.append(asyncio.create_task(pilot.loop(PILOT_DIR, lambda: pilot.usage(
         engine, events, policy.mode, len(policy.rules), VERSION))))
     yield
     for t in tasks:
@@ -2211,7 +2212,7 @@ def print_banner(url: str | None, created: dict[str, str] | None) -> None:
             f"  More keys:  {CLI} add-key NAME            (for an agent)",
             f"              {CLI} add-key NAME --approver (for a person)",
         ]
-    if url and (p := pilot.load(HOME_DIR)):
+    if url and (p := pilot.load(PILOT_DIR)):
         lines += ["", f"  Pilot:      sharing usage counts (never commands or content) with {p['server']}",
                   f"              stop anytime: {CLI} pilot leave"]
     lines += [bar, ""]
@@ -2324,8 +2325,8 @@ def _cli_pilot(args) -> int:
         if not args.code:
             print("usage: pilot join CODE --server URL", file=sys.stderr)
             return 2
-        return pilot.join(HOME_DIR, args.code, args.server, args.yes, VERSION)
-    return pilot.leave(HOME_DIR) if args.action == "leave" else pilot.status(HOME_DIR)
+        return pilot.join(PILOT_DIR, args.code, args.server, args.yes, VERSION)
+    return pilot.leave(PILOT_DIR) if args.action == "leave" else pilot.status(PILOT_DIR)
 
 
 if __name__ == "__main__":

@@ -23,17 +23,18 @@ import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import case, func, select
 
 log = logging.getLogger("gateway")
-INTERVAL = 6 * 3600
+INTERVAL = int(os.getenv("SQUIDBRAKE_PILOT_INTERVAL", str(6 * 3600)))   # hosted pilots use a shorter one
 WHAT_IS_SENT = __doc__.split("Nothing is sent unless you join.")[1].strip()
 
 
 def _path(home: Path) -> Path:
-    return home / "pilot.json"
+    return home / "pilot.json"       # `home` is the gateway's data folder (next to keys.json): writable everywhere
 
 
 def load(home: Path) -> dict | None:
@@ -124,7 +125,9 @@ async def loop(home: Path, make_payload) -> None:
 
 def join(home: Path, code: str, server: str | None, yes: bool, version: str) -> int:
     server = (server or os.getenv("SQUIDBRAKE_PILOT_SERVER") or "").rstrip("/")
-    if not server.startswith(("https://", "http://localhost", "http://127.0.0.1")):
+    host = urlparse(server).hostname or ""
+    # https, or plain http only to this machine or an internal name without dots (a hosted gateway's Docker network)
+    if not (server.startswith("https://") or (server.startswith("http://") and (host in ("localhost", "127.0.0.1") or "." not in host))):
         print("Give the pilot server you were sent, e.g. --server https://...  (https only)", file=sys.stderr)
         return 2
     print(f"\nJoining the Squidbrake pilot with code {code}.\nThis sends usage counts to {server}:\n")

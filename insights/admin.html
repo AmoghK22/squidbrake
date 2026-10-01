@@ -43,6 +43,8 @@ td.num { font-variant-numeric:tabular-nums; }
 .mini b { color:var(--ink); }
 form.new { display:grid; grid-template-columns:2fr 2fr 3fr auto; gap:8px; padding:14px 16px; }
 form.new input { border:1px solid var(--line); background:var(--bg); border-radius:9px; padding:8px 10px; }
+.hosted-opt { grid-column:1 / -1; color:var(--muted); font-size:13.5px; display:flex; gap:8px; align-items:center; }
+.hosted-opt input { width:auto; }
 .result { margin:0 16px 16px; padding:14px; border-radius:10px; background:var(--soft); display:none; }
 .result textarea { width:100%; min-height:150px; border:1px solid var(--line); border-radius:8px; padding:10px; background:var(--card); }
 .result .row { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
@@ -75,7 +77,8 @@ const ago = (iso) => {
 };
 const STAGE = { "active": ["Active", "s-active"], "installed": ["Installed, no activity yet", "s-installed"],
   "quiet": ["Gone quiet", "s-quiet"], "opened link": ["Opened the link", "s-opened"], "link sent": ["Link sent", "s-sent"],
-  "left": ["Left the pilot", "s-left"] };
+  "left": ["Left the pilot", "s-left"], "setting up": ["Setting up", "s-installed"],
+  "setup failed": ["Setup failed", "s-quiet"], "deleting": ["Deleting", "s-left"] };
 
 function login(msg = "") {
   app.innerHTML = `<div class="login"><div class="brand">Squid<span>brake</span> <small>Insights</small></div>
@@ -85,7 +88,12 @@ function login(msg = "") {
   document.getElementById("lf").onsubmit = (e) => { e.preventDefault(); key = document.getElementById("lk").value.trim(); store.set(key); load(); };
 }
 
-function message(company, link) {
+function message(company, link, hosted) {
+  if (hosted) return `Hi ${company} team! Here's Squidbrake, the brake for AI coding agents I mentioned.\n\n` +
+    `It checks every action your agent (Claude Code, Cursor, Antigravity...) takes before it runs: reading runs on its own, ` +
+    `changes wait for one click (on your phone too), and dangerous stuff (wiping folders, printing .env, dropping tables) is blocked.\n\n` +
+    `I've set up your own dashboard, so there's nothing to run on your laptop. Setup is ~2 minutes, everything is on this page:\n${link}\n\n` +
+    `Would love your honest feedback after a few days of real work!`;
   return `Hi ${company} team! Here's Squidbrake, the brake for AI coding agents I mentioned.\n\n` +
     `It checks every action your agent (Claude Code, Cursor, Antigravity...) takes before it runs: reading runs on its own, ` +
     `changes wait for one click, and dangerous stuff (wiping folders, printing .env, dropping tables) is blocked. ` +
@@ -111,7 +119,9 @@ async function load() {
       <form class="new" id="nf"><input id="nc" placeholder="Company (e.g. Acme)" required maxlength="80">
         <input id="nk" placeholder="Contact (name, email, phone)" maxlength="120">
         <input id="nn" placeholder="Note (how you met, what they build)" maxlength="500">
-        <button class="btn primary">Create link</button></form>
+        <button class="btn primary">Create link</button>
+        <label class="hosted-opt"><input type="checkbox" id="nh" checked> <b>Hosted</b>: their own dashboard at
+          <i>name</i>.app.squidbrake.com, nothing to keep running on their laptop (uncheck for the private setup: everything on their machine)</label></form>
       <div class="result" id="res"></div>
     </section>
     <section class="panel"><h2>Pilots</h2>
@@ -140,7 +150,9 @@ function row(p) {
   const agents = Object.entries(p.agents).map(([a, n]) => `<span class="chip">${esc(a)} · ${n}</span>`).join("") || `<span class="sub">none yet</span>`;
   const hits = Object.entries(p.rules_hit).map(([r, n]) => `<span class="chip r">${esc(r)} · ${n}</span>`).join("") || `<span class="sub">nothing</span>`;
   return `<tr><td><div class="co">${esc(p.company)}</div><div class="sub">${esc(p.contact || "")}</div>
-      <div class="sub">${esc(p.note || "")}</div><div class="mini">code <b>${esc(p.code)}</b> · link opened ${p.page_views}×</div></td>
+      <div class="sub">${esc(p.note || "")}</div><div class="mini">code <b>${esc(p.code)}</b> · link opened ${p.page_views}×</div>
+      ${p.hosted ? `<div class="mini">hosted: <a href="${esc(p.dashboard)}" target="_blank" rel="noopener">${esc((p.dashboard || "").replace("https://", ""))}</a></div>
+      <div class="mini">${p.keys_revealed_at ? "keys shown " + ago(p.keys_revealed_at) : p.keys_waiting ? "keys waiting on their page" : ""}${p.error ? `<span style="color:var(--accent)"> · ${esc(p.error)}</span>` : ""}</div>` : ""}</td>
     <td><span class="stage ${cls}">${label}</span><div class="mini">last seen ${ago(p.last_seen)}</div>
       <div class="mini">${p.installs} install${p.installs === 1 ? "" : "s"}${p.versions.length ? " · v" + esc(p.versions.join(", ")) : ""}${p.modes.includes("shadow") ? " · shadow" : ""}</div></td>
     <td>${spark}<div class="mini"><b>${p.total_events.toLocaleString()}</b> actions all time</div></td>
@@ -155,8 +167,9 @@ async function create(e) {
   e.preventDefault();
   const company = document.getElementById("nc").value.trim();
   const r = await api("/v1/admin/pilots", { method: "POST", body: JSON.stringify({ company,
-    contact: document.getElementById("nk").value.trim(), note: document.getElementById("nn").value.trim() }) });
-  const msg = message(company, r.link);
+    contact: document.getElementById("nk").value.trim(), note: document.getElementById("nn").value.trim(),
+    hosted: document.getElementById("nh").checked }) });
+  const msg = message(company, r.link, !!r.dashboard);
   await load();                                   // the new pilot shows in the table; then show its link
   const res = document.getElementById("res");
   res.style.display = "block";

@@ -1,0 +1,15 @@
+# systemd unit for provision.py (runs as root because it drives Docker).
+#   sudo cp squidbrake-provision.service /etc/systemd/system/ && sudo systemctl enable --now squidbrake-provision
+[Unit]
+Description=Squidbrake hosted pilot provisioner
+After=docker.service
+Requires=docker.service
+
+[Service]
+EnvironmentFile=/home/ubuntu/squidbrake-insights/.env
+ExecStart=/usr/bin/python3 /home/ubuntu/squidbrake-insights/provision.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

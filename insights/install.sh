@@ -25,6 +25,15 @@ SB="$HOME/.local/bin/squidbrake"
 [ -x "$SB" ] || SB="squidbrake"
 printf '\nInstalled: %s\n' "$("$SB" --version)"
 
+if [ -n "$SQUIDBRAKE_URL" ] && [ -n "$SQUIDBRAKE_AGENT_KEY" ]; then
+  # a hosted dashboard: nothing to run locally, just route Claude Code through it
+  case "$SQUIDBRAKE_AGENT_KEY" in *YOUR_AGENT_KEY*)
+    echo "Put your agent key (from your start page) in place of gw_YOUR_AGENT_KEY and run it again."; exit 1 ;; esac
+  "$SB" connect claude-code --url "$SQUIDBRAKE_URL" --key "$SQUIDBRAKE_AGENT_KEY" --yes --hook-only
+  printf '\nDone. Restart Claude Code and work as usual. Your dashboard: %s/dashboard\n\n' "$SQUIDBRAKE_URL"
+  exit 0
+fi
+
 if [ -n "$SQUIDBRAKE_PILOT" ] && [ -n "$SQUIDBRAKE_PILOT_SERVER" ]; then
   "$SB" pilot join "$SQUIDBRAKE_PILOT" --server "$SQUIDBRAKE_PILOT_SERVER" </dev/tty
 fi

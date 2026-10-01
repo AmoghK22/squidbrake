@@ -48,7 +48,9 @@ const D = __DATA__;
 const app = document.getElementById("app");
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-if (D.missing) {
+if (D.hosted && !D.missing) {
+  hostedPage();
+} else if (D.missing) {
   app.innerHTML = `<div class="missing"><div class="brand">Squid<span>brake</span></div>
     <h1>This link isn't valid</h1><p class="lead">Check the link you were sent, or ask the person who sent it.</p></div>`;
 } else {
@@ -121,6 +123,101 @@ if (D.missing) {
   document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.os)));
   show(/Mac|Linux|X11/.test(navigator.userAgent) && !/Windows/.test(navigator.userAgent) ? "mac" : "win");
   document.querySelectorAll(".cmd").forEach(addCopy);
+}
+
+function hostedPage() {
+  const keyless = "gw_YOUR_AGENT_KEY";
+  const cmds = (key) => ({
+    win: `$env:SQUIDBRAKE_URL="${D.dashboard}"; $env:SQUIDBRAKE_AGENT_KEY="${key}"; irm ${D.server}/install.ps1 | iex`,
+    mac: `curl -fsSL ${D.server}/install.sh | SQUIDBRAKE_URL=${D.dashboard} SQUIDBRAKE_AGENT_KEY=${key} sh`,
+    manual: `pipx install squidbrake\nsquidbrake connect claude-code --url ${D.dashboard} --key ${key} --hook-only`,
+  });
+  const ready = D.state === "running";
+  app.innerHTML = `
+    <div class="brand">Squid<span>brake</span></div>
+    <h1>Hi ${esc(D.company)}, your Squidbrake is ready</h1>
+    <p class="lead">Squidbrake checks every action your AI agent takes before it runs: reading code runs on its own,
+      changes wait for your OK (on your phone too), and dangerous commands are blocked. Yours runs on our server, so there's
+      nothing to keep open on your laptop. Setup takes about 2 minutes.</p>
+
+    <section class="step"><h2><span class="n">1</span> Your dashboard</h2>
+      <div class="cmd">${esc(D.dashboard)}</div>
+      <p class="note">${ready ? "Live. Open it after step 2 and log in with your <b>admin</b> key."
+        : "Being set up (usually under a minute). Refresh this page shortly."}</p>
+    </section>
+
+    <section class="step"><h2><span class="n">2</span> Your keys <span class="sub" style="font-weight:400;color:var(--muted)">(shown once)</span></h2>
+      <div id="keys"></div>
+    </section>
+
+    <section class="step"><h2><span class="n">3</span> Connect Claude Code</h2>
+      <p>Paste into a terminal (needs Python 3.10+). It installs the Claude Code hook and points it at your dashboard.</p>
+      <div class="tabs" role="tablist">
+        <button role="tab" data-os="win">Windows (PowerShell)</button><button role="tab" data-os="mac">macOS / Linux</button>
+        <button role="tab" data-os="manual">Manual</button></div>
+      <div class="cmd" id="installCmd"></div>
+      <p class="note">Then restart Claude Code. Every tool call (commands, edits, web fetches) now goes through your dashboard.
+        Cursor, Antigravity, Claude Desktop: <code>squidbrake connect mcp --name cursor --url ${esc(D.dashboard)} --key &lt;agent key&gt;</code>
+        prints the config to paste.</p>
+    </section>
+
+    <section class="step"><h2><span class="n">4</span> Approve from your phone</h2>
+      <p>In the dashboard, click <b>Phone</b> and scan the QR code. Held actions then reach you with one-tap Approve / Reject.</p>
+    </section>
+
+    <section class="step try"><h2><span class="n">5</span> Use it as usual, and try these</h2>
+      <ul>
+        <li>Ask your agent to <b>fix a failing test</b>: reading runs on its own; each change waits for one click.</li>
+        <li>Ask it to <b>print your .env file</b>: blocked, and the agent is told why.</li>
+        <li>Ask it to <b>force-push</b> or <b>delete a folder</b>: held for you, with a warning.</li>
+      </ul>
+    </section>
+
+    <section class="step privacy"><h2>Where your data lives</h2>
+      <ul>
+        <li><b>Your dashboard runs on a server we operate</b> (in India). Every action your agent takes is sent there to be
+          checked and recorded: the command or tool, its inputs (which can include the text of an edit) and its result.
+          That's what you see and approve in the dashboard, behind your keys.</li>
+        <li><b>We look at counts only</b> (how many actions were held, approved or blocked) to learn what helps,
+          not at what your agents did.</li>
+        <li><b>Working on something sensitive?</b> Use the private setup instead: everything stays on your machine.</li>
+        <li>When the pilot ends, or whenever you ask, we delete your dashboard and everything in it.</li>
+      </ul>
+    </section>
+
+    <p class="foot">Stuck? ${D.contact ? "Reach me: " + esc(D.contact) + "." : "Reply to the message this link came in."}
+      To disconnect: <code>squidbrake connect claude-code --remove</code>. Squidbrake is free and open source (Apache 2.0).</p>`;
+
+  let current = cmds(keyless);
+  const box = document.getElementById("installCmd");
+  const show = (os) => {
+    document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.os === os)));
+    box.dataset.os = os; box.textContent = current[os]; addCopy(box);
+  };
+  document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.os)));
+  show(/Mac|Linux|X11/.test(navigator.userAgent) && !/Windows/.test(navigator.userAgent) ? "mac" : "win");
+  document.querySelectorAll(".cmd").forEach((el) => el !== box && addCopy(el));
+
+  const keys = document.getElementById("keys");
+  if (D.keys_shown) {
+    keys.innerHTML = `<p>Your keys were already shown on this page. Lost them? Ask us and we'll issue new ones.
+      Paste your <b>agent</b> key into the command in step 3 in place of <code>${keyless}</code>.</p>`;
+  } else if (!D.keys_ready) {
+    keys.innerHTML = `<p>Your keys appear here once your dashboard is ready. Refresh in a minute.</p>`;
+  } else {
+    keys.innerHTML = `<p>Click to see your two keys. They're shown <b>only once</b>: save them in your password manager.</p>
+      <button class="tabs-like" id="reveal" style="border:0;background:var(--accent);color:#fff;border-radius:10px;padding:9px 16px;font:inherit;cursor:pointer">Show my keys</button>`;
+    document.getElementById("reveal").onclick = async () => {
+      const r = await fetch(`/v1/pilot/${encodeURIComponent(D.code)}/keys`, { method: "POST" });
+      if (!r.ok) { keys.innerHTML = `<p>${esc((await r.json().catch(() => ({}))).detail || "Couldn't fetch the keys.")}</p>`; return; }
+      const k = await r.json();
+      keys.innerHTML = `<p><b>Admin key</b> (log in to the dashboard, approve actions):</p><div class="cmd">${esc(k.admin_key)}</div>
+        <p><b>Agent key</b> (for Claude Code; already filled into step 3):</p><div class="cmd">${esc(k.agent_key)}</div>
+        <p class="note" style="color:var(--warn)">Save both now. This page won't show them again.</p>`;
+      keys.querySelectorAll(".cmd").forEach(addCopy);
+      current = cmds(k.agent_key); show(box.dataset.os);
+    };
+  }
 }
 
 function addCopy(el) {

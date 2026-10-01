@@ -28,6 +28,17 @@ $sb = Join-Path $env:USERPROFILE ".local\bin\squidbrake.exe"
 if (-not (Test-Path $sb)) { $sb = "squidbrake" }
 Write-Host "`nInstalled: $(& $sb --version)" -ForegroundColor Green
 
+if ($env:SQUIDBRAKE_URL -and $env:SQUIDBRAKE_AGENT_KEY) {
+    # a hosted dashboard: nothing to run locally, just route Claude Code through it
+    if ($env:SQUIDBRAKE_AGENT_KEY -like "*YOUR_AGENT_KEY*") {
+        Write-Host "`nPut your agent key (from your start page) in place of gw_YOUR_AGENT_KEY and run it again." -ForegroundColor Yellow
+        return
+    }
+    & $sb connect claude-code --url $env:SQUIDBRAKE_URL --key $env:SQUIDBRAKE_AGENT_KEY --yes --hook-only
+    Write-Host "`nDone. Restart Claude Code and work as usual. Your dashboard: $($env:SQUIDBRAKE_URL)/dashboard`n" -ForegroundColor Green
+    return
+}
+
 if ($env:SQUIDBRAKE_PILOT -and $env:SQUIDBRAKE_PILOT_SERVER) {
     & $sb pilot join $env:SQUIDBRAKE_PILOT --server $env:SQUIDBRAKE_PILOT_SERVER
 }

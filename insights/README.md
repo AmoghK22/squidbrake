@@ -9,6 +9,20 @@ and how they use it, **as counts only**.
   (link sent → opened → installed → active / gone quiet), actions per day, what was held, approved, rejected or
   blocked, which agents are connected and which rules fired.
 
+## Hosted pilots
+
+Tick **Hosted** when creating a pilot and the founder gets their own gateway at `https://<name>.<HOSTED_DOMAIN>`:
+nothing to keep running on their laptop, approvals from their phone. Their start page shows their keys once and a
+one-line command that connects Claude Code to it.
+
+- `provision.py` runs on the server (systemd: `squidbrake-provision.service`) and is the only part that touches Docker:
+  it asks Insights what to start or remove, runs one container per pilot (`sbp-<name>`, its own volume, capped memory),
+  reports the keys back, and joins the gateway to its pilot so its counts show up here.
+- Caddy serves `*.HOSTED_DOMAIN` with on-demand certificates, and asks `/v1/caddy/ask` first, so it only gets
+  certificates for hosted pilots that exist.
+- Be clear with founders: on a hosted gateway their agents' actions (commands, tool inputs and results) are stored on
+  your server. The start page says so, and offers the private setup instead.
+
 ## What a pilot install sends
 
 Only after `squidbrake pilot join CODE --server URL`, which shows the list below and asks first
