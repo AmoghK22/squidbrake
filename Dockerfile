@@ -11,6 +11,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY server.py commands.py taint.py verify.py pilot.py rules.yaml dashboard.html approve.html ./
+COPY squidbrake/__init__.py squidbrake/__init__.py
 RUN useradd -r -u 10001 gateway && mkdir -p /app/data && chown -R gateway /app/data
 USER gateway
 
