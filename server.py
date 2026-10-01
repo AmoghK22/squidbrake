@@ -1958,6 +1958,39 @@ def audit_export(days: int = Query(30, ge=1, le=3650), who: str = Depends(person
         "Content-Disposition": f'attachment; filename="squidbrake-audit-{datetime.now():%Y%m%d}.csv"'})
 
 
+@app.get("/v1/audit/export.jsonl")
+def audit_export_jsonl(days: int = Query(30, ge=1, le=3650), who: str = Depends(person)):
+    import io
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+    buf = io.StringIO()
+    head = verify_audit_chain()
+
+    def serialize(v):
+        if isinstance(v, datetime):
+            return v.isoformat().replace("+00:00", "Z")
+        return v
+
+    with engine.connect() as conn:
+        for r in conn.execute(select(*[events.c[c] for c in EXPORT_COLUMNS]).where(events.c.created_at >= since)
+                              .order_by(events.c.created_at)):
+            row_dict = {c: serialize(v) for c, v in zip(EXPORT_COLUMNS, r)}
+            for col in ("input", "output"):
+                if row_dict.get(col):
+                    try:
+                        row_dict[col] = json.loads(row_dict[col])
+                    except ValueError:
+                        pass
+            buf.write(json.dumps(row_dict, default=str) + "\n")
+    with audited_tx() as conn:
+        audit(conn, who, "audit.exported", None, days=days, format="jsonl")
+    # A broken chain has no head hash: say so instead of failing, since that's exactly when someone needs this export.
+    return Response(buf.getvalue(), media_type="application/jsonl", headers={
+        "Content-Disposition": f'attachment; filename="squidbrake-audit-{datetime.now():%Y%m%d}.jsonl"',
+        "X-Audit-Chain": "verified" if head["ok"] else "broken",
+        "X-Audit-Chain-Head": head.get("head_hash") or "none",
+    })
+
+
 @app.post("/v1/policy/check")
 def policy_check(ev: EventIn, client: str = Depends(auth)):
     """Dry run: what would the rules decide? Nothing is recorded."""

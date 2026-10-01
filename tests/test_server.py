@@ -707,6 +707,34 @@ def test_reports_and_export(c, org):
     assert r["audit"]["ok"] and r["agents"][0]["agent"] in server.digest_text(r)  # most active agents are listed
     csv_text = c.get("/v1/audit/export.csv", headers=org["viewer"]).text
     assert "VERIFIED" in csv_text.splitlines()[0] and "support-bot" in csv_text
+    jsonl_res = c.get("/v1/audit/export.jsonl", headers=org["viewer"])
+    assert jsonl_res.headers["X-Audit-Chain"] == "verified"
+    jsonl_text = jsonl_res.text
+    assert "support-bot" in jsonl_text and len(jsonl_text.splitlines()) > 0
+    import json
+    lines = [json.loads(line) for line in jsonl_text.splitlines()]
+    # input/output come back as JSON values (objects, lists, numbers...), not JSON text inside a string
+    assert any(isinstance(line.get("input"), dict) for line in lines)
+    for line in lines:
+        for col in ("input", "output"):
+            v = line.get(col)
+            assert not (isinstance(v, str) and v.lstrip().startswith(("{", "["))), (col, v)
+
+
+def test_jsonl_export_of_a_tampered_trail_says_broken(c, org):
+    """The export must still work, and say so, when someone has edited the audit trail."""
+    from sqlalchemy import text as sql
+    with server.engine.begin() as conn:  # someone quietly edits history...
+        seq, actor = conn.execute(sql("SELECT seq, actor FROM audit_log ORDER BY seq DESC LIMIT 1")).first()
+        conn.execute(sql("UPDATE audit_log SET actor='someone-else' WHERE seq=:s"), {"s": seq})
+    try:
+        r = c.get("/v1/audit/export.jsonl", headers=org["viewer"])
+        assert r.status_code == 200
+        assert r.headers["X-Audit-Chain"] == "broken" and r.headers["X-Audit-Chain-Head"] == "none"
+    finally:  # put it back so later tests see an intact chain
+        with server.engine.begin() as conn:
+            conn.execute(sql("UPDATE audit_log SET actor=:a WHERE seq=:s"), {"a": actor, "s": seq})
+    assert c.get("/v1/audit/verify", headers=org["viewer"]).json()["ok"]
 
 
 def test_one_tap_links(c, org):

@@ -486,6 +486,7 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
       </div>
       <span class="spacer"></span>
       <button class="btn" id="csvBtn">⬇ Download audit CSV</button>
+      <button class="btn" id="jsonlBtn">⬇ Download JSONL</button>
       <button class="btn" id="printBtn">🖨 Print / save PDF</button>
     </div>
     <div class="print-head" id="printHead"></div>
@@ -1664,6 +1665,16 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
       if (!res.ok) throw new Error(`export failed (${res.status})`);
       const url = URL.createObjectURL(await res.blob());
       el("a", { href: url, download: `squidbrake-audit-${new Date().toISOString().slice(0, 10)}.csv` }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      loadReports();
+    } catch (err) { toast(err.message); }
+  });
+  $("#jsonlBtn").addEventListener("click", async () => {
+    try {
+      const res = await fetch(`/v1/audit/export.jsonl?days=${repDays}`, { headers: { "X-Gateway-Key": apiKey } });
+      if (!res.ok) throw new Error(`export failed (${res.status})`);
+      const url = URL.createObjectURL(await res.blob());
+      el("a", { href: url, download: `squidbrake-audit-${new Date().toISOString().slice(0, 10)}.jsonl` }).click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       loadReports();
     } catch (err) { toast(err.message); }
