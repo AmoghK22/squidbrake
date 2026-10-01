@@ -150,8 +150,8 @@ def _unquote(word: str) -> str:
 # --------------------------------------------------------------------------- classification
 
 WRAPPERS = {"sudo", "doas", "env", "time", "nohup", "nice", "ionice", "command", "exec", "builtin", "timeout",
-            "stdbuf", "caffeinate", "npx", "call"}
-SHELLS = {"bash", "sh", "zsh", "dash", "ksh", "fish", "busybox"}
+            "stdbuf", "caffeinate", "npx", "call", "watch", "busybox"}
+SHELLS = {"bash", "sh", "zsh", "dash", "ksh", "fish"}
 POWERSHELLS = {"powershell", "pwsh"}
 
 READ_ONLY = {
@@ -228,7 +228,7 @@ def _strip_wrappers(words: list[str]) -> list[str]:
             words = words[1:]; continue
         if w in WRAPPERS:
             words = words[1:]
-            while words and (words[0].startswith("-") or (w == "timeout" and re.match(r"^\d", words[0]))
+            while words and (words[0].startswith("-") or (w in ("timeout", "watch") and re.match(r"^\d", words[0]))
                              or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0])):
                 words = words[1:]
             continue
@@ -435,6 +435,8 @@ def _git(cmd: Command, words: list[str]) -> Command:
         cmd.kind, cmd.why = "irreversible", f"deletes stashed work ({' '.join(words)})"
     elif sub in ("filter-branch", "filter-repo") or (sub == "update-ref" and "-d" in args):
         cmd.kind, cmd.why = "irreversible", f"rewrites repository history ({' '.join(words[:3])})"
+    elif sub == "reflog" and args[:1] in (["expire"], ["delete"]):
+        cmd.kind, cmd.why = "irreversible", f"deletes the record used to recover lost commits ({' '.join(words[:3])})"
     elif sub in GIT_READ_ONLY and not any(a.startswith("--output") for a in args):
         cmd.kind = "read_only"
     elif sub == "branch" and all(a.startswith("-") for a in args) and not letters & {"d", "D", "m", "M", "c", "C"}:

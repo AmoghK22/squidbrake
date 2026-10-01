@@ -1,0 +1,21 @@
+name: Feature request
+description: Something Squidbrake should check, connect to, or show
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The agent, the tool or command, and what you want to happen (run, wait for a person, be blocked).
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Would you like to build it?
+      options:
+        - label: Yes, I can send a pull request

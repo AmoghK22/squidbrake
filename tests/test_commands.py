@@ -22,7 +22,7 @@ def kind(line):
     "ls -la && rm -rf ~", "true; rm -rf /", "bash -c 'rm -rf /'", "sh -c \"cd /tmp && rm -rf ~\"",
     "bash -lc 'rm -rf ~/'", "sh -ec \"rm -rf ~\"", "bash -c -l 'rm -rf /'",
     'powershell -Command "Remove-Item -Recurse -Force C:\\Users"', "echo $(rm -rf ~)", "echo `rm -rf /`",
-    "npx rimraf /", "timeout 5 sudo rm -rf /",
+    "npx rimraf /", "timeout 5 sudo rm -rf /", "busybox rm -rf /", "busybox sh -c 'rm -rf ~'", "watch -n 1 rm -rf ~/",
     "dd if=/dev/zero of=/dev/sda bs=1M", "mkfs.ext4 /dev/sdb1", "wipefs -a /dev/sda", "format D:", "chmod -R 777 /",
 ])
 def test_catastrophic(line):
@@ -34,6 +34,7 @@ def test_catastrophic(line):
     "find / | xargs rm -rf",               # targets come from stdin, so it can't tell where: still held
     "git push --force origin main", "git push -f", "git push origin +main", "git push origin :old-branch",
     "git reset --hard HEAD~3", "git clean -fdx", "git branch -D feature", "git checkout -- .", "git stash drop",
+    "git reflog expire --expire=now --all", "git reflog delete HEAD@{1}",
     "terraform destroy -auto-approve", "terraform apply -auto-approve", "tofu state rm aws_db.main",
     "kubectl delete ns prod", "kubectl -n prod delete deployment api", "helm uninstall api",
     "aws rds delete-db-snapshot --db-snapshot-identifier x", "aws ec2 terminate-instances --instance-ids i-1",
@@ -57,7 +58,7 @@ def test_hidden(line):
 
 @pytest.mark.parametrize("line", [
     "ls", "ls -la", "git status", "git log --oneline -5", "git diff HEAD~1", "git -C repo status 2>&1",
-    "git branch", "git branch -a", "git remote -v", "cat README.md | grep foo", "grep -r TODO src | wc -l",
+    "git branch", "git branch -a", "git remote -v", "git reflog", "cat README.md | grep foo", "grep -r TODO src | wc -l",
     "cat file 2>/dev/null", "cd C:\\Users\\me\\proj && dir", "Get-ChildItem -Recurse | Select-String foo",
     "find . -name '*.py'", "echo 'rm -rf /'", "pwd", "head -n 20 server.py",
 ])

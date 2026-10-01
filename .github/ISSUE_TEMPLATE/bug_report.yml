@@ -1,0 +1,29 @@
+name: Bug report
+description: Something doesn't work the way the README says
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found a way around a block or an approval, or a secret stored unredacted? Please don't file it here:
+        report it privately under **Security > Report a vulnerability**.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The command or tool call, the rule that should have applied, and what the dashboard showed.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and how you run it
+      placeholder: "squidbrake 0.3.3 (pip) on Windows 11, with Claude Code"
+    validations:
+      required: true

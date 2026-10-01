@@ -503,7 +503,19 @@ SECRET_KEY_RE = re.compile(
     r"pass(word|wd)?|secret|token|api[_-]?key|authorization|cookie|credential|private[_-]?key|x-gateway-key",
     re.I,
 )
-SECRET_VALUE_RE = re.compile(r"(Bearer\s+)[A-Za-z0-9._~+/=-]+|\bsk-[A-Za-z0-9_-]{16,}|\bgh[pousr]_[A-Za-z0-9]{20,}")
+SECRET_VALUE_RE = re.compile(
+    r"(Bearer\s+)[A-Za-z0-9._~+/=-]+"
+    r"|\bsk-[A-Za-z0-9_-]{16,}"                                          # OpenAI, Anthropic
+    r"|\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}"      # GitHub
+    r"|\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"                                    # AWS access key id
+    r"|\b(?:xox[abeprs]|xapp)-[A-Za-z0-9-]{10,}"                         # Slack
+    r"|\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}"                           # Stripe
+    r"|\bAIza[0-9A-Za-z_-]{35}"                                          # Google API key
+    r"|\bnpm_[A-Za-z0-9]{36}"
+    r"|\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+"     # JWT
+    r"|(://[^\s:/@]+:)[^\s/@]+(?=@)"                                     # password in a URL (postgres://user:pass@host)
+    r"|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)"
+)
 
 
 def redact(obj: Any) -> Any:
@@ -512,7 +524,7 @@ def redact(obj: Any) -> Any:
     if isinstance(obj, (list, tuple)):
         return [redact(v) for v in obj]
     if isinstance(obj, str):
-        return SECRET_VALUE_RE.sub(lambda m: (m.group(1) or "") + "[REDACTED]", obj)
+        return SECRET_VALUE_RE.sub(lambda m: (m.group(1) or m.group(2) or "") + "[REDACTED]", obj)
     return obj
 
 

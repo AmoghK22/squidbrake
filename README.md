@@ -5,6 +5,8 @@
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](requirements.txt)
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](#2-connect-real-agents)
+[![Real incidents replayed: 11 of 11 stopped](https://img.shields.io/badge/real%20incidents%20replayed-11%20of%2011%20stopped-brightgreen.svg)](incidents/)
+[![Good first issues](https://img.shields.io/github/issues/batrapulkit/squidbrake/good%20first%20issue?label=good%20first%20issues&color=7057ff)](https://github.com/batrapulkit/squidbrake/labels/good%20first%20issue)
 
 ![Demo: an AI agent's scam wire is blocked, a refund waits for approval and is approved from a phone](https://raw.githubusercontent.com/batrapulkit/squidbrake/main/docs/demo.gif)
 
@@ -332,7 +334,8 @@ in the file. `verify.py` needs only the Python standard library. The dashboard's
   click at the same moment, only the first decision counts.
 - **Upgrades**: new columns are added to an existing database automatically at startup.
 - **Redaction**: keys like `password`, `token`, `api_key`, `authorization`, `cookie` and values like
-  `Bearer ...`, `sk-...`, `ghp_...` are stored as `[REDACTED]`. Rules still see the raw input.
+  `Bearer ...`, `sk-...`, `ghp_...`, AWS, Slack, Stripe, Google and npm keys, JWTs, private keys and the password in a
+  URL (`postgres://user:...@host`) are stored as `[REDACTED]`. Rules still see the raw input.
 - Payloads over `MAX_PAYLOAD_CHARS` are truncated in storage. Proxy responses are buffered (no streaming/SSE).
 - SQLite (WAL) is fine for one machine. For several gateway replicas, set `DATABASE_URL` to Postgres.
 
@@ -364,6 +367,8 @@ Tell us what you need most: 👍 or comment on the issues.
 
 ## Contributing, security, license
 
-- [CONTRIBUTING.md](CONTRIBUTING.md): setup and guidelines
+- [CONTRIBUTING.md](CONTRIBUTING.md): a 10-minute setup, and
+  [good first issues](https://github.com/batrapulkit/squidbrake/labels/good%20first%20issue) that name the file and
+  function to change. Comment on one to claim it. Hacktoberfest pull requests are welcome.
 - [SECURITY.md](SECURITY.md): report vulnerabilities privately
 - Licensed under the [Apache License 2.0](LICENSE)

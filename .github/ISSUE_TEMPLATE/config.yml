@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a vulnerability (private)
+    url: https://github.com/batrapulkit/squidbrake/security/advisories/new
+    about: A way around a block or an approval, or a secret stored unredacted.
+  - name: Questions and ideas
+    url: https://github.com/batrapulkit/squidbrake/discussions
+    about: Ask how to set something up, or float an idea before opening an issue.

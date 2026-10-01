@@ -94,6 +94,27 @@ def test_redaction(c):
     assert "sk-aaaa" not in stored["note"]
 
 
+@pytest.mark.parametrize("secret", [
+    "AKIA" + "ABCDEFGHIJKLMNOP",                              # AWS access key id
+    "xoxb-" + "1" * 12 + "-" + "a" * 24,                      # Slack bot token
+    "github_pat_" + "A" * 30,                                 # GitHub fine-grained token
+    "sk_live_" + "a" * 24, "rk_live_" + "a" * 24,             # Stripe
+    "AIza" + "a" * 35,                                        # Google API key
+    "npm_" + "a" * 36,
+    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcDEF123456",      # JWT
+    "-----BEGIN PRIVATE KEY-----\nMIIabc\n-----END PRIVATE KEY-----",
+])
+def test_redaction_of_secrets_inside_commands(secret):
+    assert secret not in server.redact({"command": f"deploy --with {secret} --now"})["command"]
+
+
+def test_redaction_keeps_the_rest_of_a_url():
+    assert server.redact("psql postgres://app:hunter2pass@db.internal:5432/app") == \
+        "psql postgres://app:[REDACTED]@db.internal:5432/app"
+    assert server.redact("curl http://localhost:8080/a/b") == "curl http://localhost:8080/a/b"
+    assert server.redact("mail to pat@example.com about http://x.io:9000/y") == "mail to pat@example.com about http://x.io:9000/y"
+
+
 def test_list_filter(c):
     c.post("/v1/events", headers=H, json={"name": "t", "session_id": "only-me"})
     rows = c.get("/v1/events", headers=H, params={"session_id": "only-me"}).json()["events"]
