@@ -15,5 +15,5 @@ ENV PATH=/home/bench/.local/bin:$PATH
 ARG SQUIDBRAKE_VERSION=
 RUN pipx install "squidbrake${SQUIDBRAKE_VERSION:+==$SQUIDBRAKE_VERSION}"
 
-COPY --chown=bench run.sh /home/bench/run.sh
+COPY --chown=bench run.sh mock_model.py /home/bench/
 CMD ["bash", "/home/bench/run.sh"]
