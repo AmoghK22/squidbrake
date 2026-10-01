@@ -4,6 +4,7 @@ The `squidbrake` command (installed with pip):
   squidbrake                         start the gateway (same as: python server.py)
   squidbrake connect all             connect every AI agent on this computer (same as: python connect.py ...)
   squidbrake connect claude-code     connect one agent
+  squidbrake connect status          which agents are covered (and whether Codex has trusted the hook)
   squidbrake hook                    the Claude Code hook, used by the Claude Code plugin (plugin/)
   squidbrake proxy --app NAME -- CMD an MCP server that checks every call to the app's MCP server CMD first
                                      (same as: python gateway_proxy.py ...)

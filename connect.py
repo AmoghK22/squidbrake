@@ -4,6 +4,8 @@ Connect an AI agent to Squidbrake in one command.
 
   python connect.py all                    every agent on this computer at once: Claude Code, Cursor, Codex,
                                            Gemini CLI, VS Code, Antigravity, and the MCP servers they use (--remove undoes it)
+  python connect.py status                 which agents go through Squidbrake, and whether each will run the hook
+                                           (Codex runs a new hook only after you trust it in /hooks)
   python connect.py claude-code            Claude Code: every tool call goes through the gateway (hook)
                                            + database tools (MCP)
   python connect.py claude-code --remove   undo it
@@ -34,6 +36,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -447,7 +450,7 @@ def hook_agents() -> dict[str, dict]:
                        "covers": "shell commands, file reads, writes and edits"},
         "codex": {"present": bool(shutil.which("codex")) or (home / ".codex").exists(), "file": home / ".codex" / "hooks.json",
                   "edit": grouped("PreToolUse", "Bash|shell|apply_patch|Edit|Write", 600),
-                  "covers": "shell commands and edits (approve the hook once in Codex with /hooks)"},
+                  "covers": "shell commands and edits"},
         "vscode": {"present": (_user_dir() / "Code" / "User").exists() or (home / ".copilot").exists(),
                    "file": home / ".copilot" / "hooks" / "squidbrake.json", "edit": vscode,
                    "covers": "Copilot agent mode: terminal commands, reads and edits"},
@@ -488,6 +491,92 @@ def agents(args) -> None:
         t["edit"](data, cmd)
         _write_json(t["file"], data)
         print(f"{name}: hook added ({t['covers']}). Restart {name} to apply.")
+        if name == "codex" and codex_hook_trust() != "trusted":
+            print(CODEX_UNTRUSTED)
+
+
+CODEX_UNTRUSTED = ("  !! Codex won't run it yet: it skips a new hook until you approve it. Until then NOTHING Codex does is\n"
+                   "     checked, in any mode. Open Codex, type /hooks and trust the Squidbrake hook. Check with:\n"
+                   "     squidbrake connect status")
+
+
+def codex_hook_trust(timeout: float = 20) -> str | None:
+    """Ask Codex itself whether it will run Squidbrake's hook: "trusted", "untrusted" or "modified" (what /hooks
+    shows, from its app-server's hooks/list). None if Codex isn't installed, has no Squidbrake hook, or didn't answer."""
+    codex = shutil.which("codex")
+    if not codex:
+        return None
+    requests = [{"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                 "params": {"clientInfo": {"name": "squidbrake", "version": "1"}}},
+                {"jsonrpc": "2.0", "method": "initialized"},
+                {"jsonrpc": "2.0", "id": 2, "method": "hooks/list", "params": {"cwds": [str(Path.home())]}}]
+    try:
+        proc = subprocess.Popen([codex, "app-server"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    answer: list[dict] = []
+
+    def read() -> None:
+        for line in proc.stdout:
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
+            if msg.get("id") == 2:
+                answer.append(msg)
+                return
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    try:
+        proc.stdin.write("".join(json.dumps(r) + "\n" for r in requests))
+        proc.stdin.flush()
+    except OSError:
+        pass
+    reader.join(timeout)
+    proc.kill()
+    if not answer:
+        return None
+    statuses = [h.get("trustStatus") for d in (answer[0].get("result") or {}).get("data", [])
+                for h in d.get("hooks", []) if "agent_hook.py" in (h.get("command") or "")]
+    if not statuses:
+        return None
+    return next((s for s in statuses if s not in ("trusted", "managed")), "trusted")
+
+
+def status(args) -> int:
+    """Which agents here go through Squidbrake, and whether each one will really run the hook."""
+    try:
+        import httpx
+        up = httpx.get(f"{args.url}/health", timeout=3).status_code == 200
+    except Exception:
+        up = False
+    print(f"gateway       {args.url}: {'running' if up else 'NOT REACHABLE (start it: squidbrake)'}")
+    problems = 0 if up else 1
+    claude = settings_path(None)
+    if (Path.home() / ".claude").exists() or shutil.which("claude"):
+        hooked = claude.exists() and "claude_hook.py" in claude.read_text(encoding="utf-8", errors="replace")
+        print(f"{'claude-code':13} {'connected' if hooked else 'no hook in settings.json (fine if you use the plugin)'}")
+    for name, t in hook_agents().items():
+        if not t["present"]:
+            continue
+        text = t["file"].read_text(encoding="utf-8", errors="replace") if t["file"].exists() else ""
+        if "agent_hook.py" not in text:
+            print(f"{name:13} not connected (squidbrake connect agents --agent {name})")
+            problems += 1
+            continue
+        if name == "codex":
+            trust = codex_hook_trust()
+            if trust == "trusted":
+                print(f"{name:13} connected (hook trusted in Codex)")
+            else:
+                print(f"{name:13} hook added, but {('NOT TRUSTED' if trust else 'trust unknown (Codex did not answer)')}")
+                print(CODEX_UNTRUSTED)
+                problems += 1
+            continue
+        print(f"{name:13} connected")
+    return 1 if problems else 0
 
 
 # --------------------------------------------------------------------------- everything at once
@@ -518,11 +607,13 @@ def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="squidbrake connect" if os.getenv("SQUIDBRAKE_CLI") else None,
                                 description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("all", "claude-code", "mcp", "wrap", "guard", "agents"):
+    for name in ("all", "status", "claude-code", "mcp", "wrap", "guard", "agents"):
         s = sub.add_parser(name)
         s.add_argument("--url", default="http://localhost:8080", help="the gateway's address")
         s.add_argument("--key")
-        if name == "all":
+        if name == "status":
+            pass
+        elif name == "all":
             s.add_argument("--remove", action="store_true", help="undo it for every agent")
             s.add_argument("--yes", action="store_true")
         elif name == "agents":
@@ -556,6 +647,8 @@ def main(argv: list[str] | None = None) -> None:
     args.url = args.url.rstrip("/")
     if args.cmd == "mcp":
         args.agent = args.name
+    if args.cmd == "status":
+        sys.exit(status(args))
     {"all": connect_all, "claude-code": claude_code, "mcp": mcp, "wrap": wrap, "guard": guard, "agents": agents}[args.cmd](args)
 
 

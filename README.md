@@ -72,7 +72,8 @@ squidbrake                        # start it: opens the dashboard
 `connect all` finds the agents you have (Claude Code, Cursor, Codex, Gemini CLI, VS Code Copilot, Antigravity) and
 the MCP servers they already use, and routes them all through Squidbrake. It prints your dashboard key the first
 time, backs up every config it changes, and `squidbrake connect all --remove` undoes it. Restart the agents, then
-ask one to run `rm -rf ~/` and watch it get blocked.
+ask one to run `rm -rf ~/` and watch it get blocked. `squidbrake connect status` shows which agents are covered, and
+catches the one step people miss (Codex runs a new hook only after you approve it in `/hooks`).
 
 Your rules, keys and data live in `~/.squidbrake`; edit `~/.squidbrake/rules.yaml` and changes apply at once.
 
@@ -115,7 +116,7 @@ from a clone, use the `.venv` Python that `start.bat` / `start.sh` created):
 |---|---|---|
 | Claude Code | every tool call (Bash, PowerShell, edits, reads, web, MCP) | `connect claude-code` |
 | Cursor | terminal commands and file reads, plus its MCP servers | `connect agents --agent cursor`, `connect guard --agent cursor` |
-| Codex | shell commands and edits (approve the hook once in Codex with `/hooks`) | `connect agents --agent codex` |
+| Codex | shell commands and edits. **Approve the hook once in Codex with `/hooks`**: until then Codex skips it | `connect agents --agent codex` |
 | Gemini CLI | shell commands, reads, writes and edits, plus its MCP servers | `connect agents --agent gemini-cli` |
 | VS Code Copilot | agent-mode commands, reads and edits, plus its MCP servers | `connect agents --agent vscode` |
 | Antigravity | terminal commands, reads and writes, plus its MCP servers | `connect agents --agent antigravity` |

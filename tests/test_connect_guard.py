@@ -79,3 +79,49 @@ def test_connect_all_and_undo(tmp_path, monkeypatch):
     assert json.loads(mcp.read_text(encoding="utf-8")) == original
     assert "hooks" not in json.loads((home / ".claude" / "settings.json").read_text(encoding="utf-8"))
     assert not (home / ".codex" / "hooks.json").exists()
+
+
+def _fake_codex(tmp_path, monkeypatch, trust):
+    """A stand-in `codex` whose app-server answers hooks/list the way Codex does."""
+    script = tmp_path / "fake_codex.py"
+    script.write_text(f"""import json, sys
+for line in sys.stdin:
+    m = json.loads(line)
+    if m.get("id") == 1:
+        print(json.dumps({{"id": 1, "result": {{}}}}), flush=True)
+    if m.get("id") == 2:
+        hook = {{"key": "k", "command": "python agent_hook.py codex --key x", "trustStatus": "{trust}"}}
+        other = {{"key": "o", "command": "lint.sh", "trustStatus": "untrusted"}}
+        print(json.dumps({{"id": 2, "result": {{"data": [{{"cwd": ".", "hooks": [other, hook]}}]}}}}), flush=True)
+""", encoding="utf-8")
+    if sys.platform == "win32":
+        exe = tmp_path / "codex.cmd"
+        exe.write_text(f'@"{sys.executable}" "{script}" %*\n', encoding="utf-8")
+    else:
+        exe = tmp_path / "codex"
+        exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n', encoding="utf-8")
+        exe.chmod(0o755)
+    monkeypatch.setattr(connect.shutil, "which", lambda name: str(exe) if name == "codex" else None)
+
+
+def test_codex_hook_trust_asks_codex(tmp_path, monkeypatch):
+    _fake_codex(tmp_path, monkeypatch, "trusted")
+    assert connect.codex_hook_trust() == "trusted"          # only Squidbrake's hook counts, not the user's lint hook
+    _fake_codex(tmp_path, monkeypatch, "untrusted")
+    assert connect.codex_hook_trust() == "untrusted"
+    monkeypatch.setattr(connect.shutil, "which", lambda name: None)
+    assert connect.codex_hook_trust() is None
+
+
+def test_status_flags_an_untrusted_codex_hook(tmp_path, monkeypatch, capsys):
+    home = _home(tmp_path, monkeypatch)
+    (home / ".codex").mkdir()
+    monkeypatch.setattr(connect.shutil, "which", lambda name: None)
+    connect.main(["agents", "--agent", "codex", "--url", URL, "--key", KEY, "--yes"])
+    monkeypatch.setattr(connect, "codex_hook_trust", lambda: "untrusted")
+    try:
+        connect.main(["status", "--url", "http://127.0.0.1:9"])
+    except SystemExit as e:
+        code = e.code
+    out = capsys.readouterr().out
+    assert code == 1 and "NOT TRUSTED" in out and "/hooks" in out and "NOT REACHABLE" in out

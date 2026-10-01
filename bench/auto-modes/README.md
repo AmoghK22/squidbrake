@@ -53,7 +53,7 @@ Reading it:
   switching off the prompts doesn't switch off Squidbrake.
 - **Codex: trust the hook once.** Codex skips any new hook until you approve it in `/hooks`; that's its own
   protection against hooks being added behind your back. Until you do, nothing is checked, in any mode.
-  `squidbrake connect` says so when it adds the hook. (The other rows pass `--dangerously-bypass-hook-trust`, which
+  `squidbrake connect` says so when it adds the hook, and `squidbrake connect status` asks Codex whether it's trusted yet. (The other rows pass `--dangerously-bypass-hook-trust`, which
   stands in for that one approval.)
 
 ## Editor agents: Cursor, VS Code Copilot, Antigravity (by hand, in a VM)
