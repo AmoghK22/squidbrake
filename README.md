@@ -343,6 +343,18 @@ pip install pytest && pytest -q
 python tests/e2e_business_scenario.py
 ```
 
+## Roadmap
+
+- **Reach checks for AWS** ([#18](https://github.com/batrapulkit/squidbrake/issues/18), [design](docs/design/aws-reach-checks.md)):
+  before an IAM change runs, work out what the agent will be able to reach afterwards, and hold it if that crosses a line
+  (admin roles, production, secrets). Stops an agent from giving itself admin in steps that each look harmless.
+- **An optional risk model that can only escalate** ([#16](https://github.com/batrapulkit/squidbrake/issues/16)): a second
+  opinion that can hold an action, never allow one.
+- **More agents connected in one command**: Cursor install ([#2](https://github.com/batrapulkit/squidbrake/issues/2)),
+  more rule packs like the [GitHub and Stripe ones](examples/rules/).
+
+Tell us what you need most: 👍 or comment on the issues.
+
 ## Contributing, security, license
 
 - [CONTRIBUTING.md](CONTRIBUTING.md): setup and guidelines

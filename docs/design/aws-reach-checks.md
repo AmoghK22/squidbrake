@@ -1,6 +1,6 @@
 # Design: reach checks for AWS
 
-**Status:** proposed, not built yet. Comments welcome on the [tracking issue](https://github.com/batrapulkit/squidbrake/issues).
+**Status:** proposed, not built yet. Comments welcome on [#18](https://github.com/batrapulkit/squidbrake/issues/18).
 
 ## The problem
 
@@ -71,4 +71,4 @@ flowchart TD
 - How should the protected list be written in `rules.yaml`?
 - Is `terraform plan` the right place to check, rather than each API call?
 
-If your agents have AWS access, we'd love to hear how you handle this today: open an issue or comment on the tracking issue.
+If your agents have AWS access, we'd love to hear how you handle this today: open an issue or comment on [#18](https://github.com/batrapulkit/squidbrake/issues/18).
