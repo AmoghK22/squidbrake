@@ -54,6 +54,20 @@ def deny(reason: str, stop: bool = False) -> None:
     sys.exit(0)
 
 
+def unreachable(url: str, e: httpx.HTTPError, what: str = "action") -> str:
+    """Why everything is blocked, in words a person can act on (the agent passes it on). Same text in agent_hook.py."""
+    status = getattr(getattr(e, "response", None), "status_code", None)
+    if "rejected" in str(e):
+        why = f"Squidbrake's dashboard at {url} rejected this computer's key (it may have been removed)"
+    elif status in (502, 503, 504) or isinstance(e, (httpx.ConnectError, httpx.TimeoutException)):
+        why = f"Squidbrake's dashboard at {url} isn't answering: it may be switched off, restarting, or deleted"
+    else:
+        why = f"Squidbrake at {url} is unreachable or misconfigured ({e})"
+    return (f"{why}. Every {what} must go through it, so this was blocked. Tell the user: start it again (or ask "
+            f"whoever runs it). If it was removed on purpose, take Squidbrake out of this computer's agents with: "
+            f"squidbrake connect all --remove")
+
+
 def pre(ev: dict, http: httpx.Client) -> None:
     body = {
         "name": ev.get("tool_name", "unknown"), "kind": "claude_code", "input": ev.get("tool_input"),
@@ -79,8 +93,7 @@ def pre(ev: dict, http: httpx.Client) -> None:
     except httpx.HTTPError as e:
         if FAIL_OPEN:
             return
-        deny(f"Squidbrake at {GATEWAY_URL} is unreachable or misconfigured ({e}). Every tool call must go "
-             f"through it, so this call was blocked. Ask the user to start the gateway.")
+        deny(unreachable(GATEWAY_URL, e, "tool call"))
 
     if d["decision"] == "review":
         deny("Squidbrake: nobody approved this in time. Ask the user to approve it in the dashboard, then try again.")

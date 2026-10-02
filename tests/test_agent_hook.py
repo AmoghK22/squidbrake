@@ -105,3 +105,29 @@ def test_install_and_remove_hooks(tmp_path, monkeypatch):
     assert json.loads((tmp_path / ".cursor" / "hooks.json").read_text(encoding="utf-8")) == {
         "version": 1, "hooks": {"beforeShellExecution": [{"command": "./their-own-hook.sh"}]}}
     assert not (tmp_path / ".codex" / "hooks.json").exists()
+
+
+def test_a_gateway_that_is_gone_says_what_to_do():
+    """A deleted or stopped dashboard blocks everything (fail closed), and the message says so in plain words,
+    with the way out, instead of a bare "502 Bad Gateway"."""
+    import httpx
+    import claude_hook
+    req = httpx.Request("POST", "https://acme.app.example.com/v1/events")
+    gone = httpx.HTTPStatusError("502", request=req, response=httpx.Response(502, request=req))
+    refused = httpx.ConnectError("connection refused", request=req)
+    for unreachable in (agent_hook.unreachable, claude_hook.unreachable):
+        for e in (gone, refused):
+            msg = unreachable("https://acme.app.example.com", e)
+            assert "isn't answering" in msg and "deleted" in msg and "squidbrake connect all --remove" in msg
+            assert "blocked" in msg
+        msg = unreachable("https://acme.app.example.com", httpx.HTTPError("the gateway rejected the key"))
+        assert "rejected this computer's key" in msg and "squidbrake connect all --remove" in msg
+    assert agent_hook.unreachable("u", gone) == claude_hook.unreachable("u", gone)   # the two hooks say the same
+
+
+def test_hook_with_no_gateway_blocks_and_explains(monkeypatch, capsys):
+    monkeypatch.setattr(agent_hook, "URL", "http://127.0.0.1:9")                       # nothing listens there
+    with pytest.raises(SystemExit):
+        agent_hook.check("antigravity", "Bash", {"command": "ls"}, "s1")
+    out = json.loads(capsys.readouterr().out)
+    assert out["decision"] == "deny" and "isn't answering" in out["reason"]

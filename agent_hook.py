@@ -106,6 +106,20 @@ def answer(agent: str, allow: bool, message: str = "", stop: bool = False) -> No
     sys.exit(0)
 
 
+def unreachable(url: str, e: httpx.HTTPError, what: str = "action") -> str:
+    """Why everything is blocked, in words a person can act on (the agent passes it on). Same text in claude_hook.py."""
+    status = getattr(getattr(e, "response", None), "status_code", None)
+    if "rejected" in str(e):
+        why = f"Squidbrake's dashboard at {url} rejected this computer's key (it may have been removed)"
+    elif status in (502, 503, 504) or isinstance(e, (httpx.ConnectError, httpx.TimeoutException)):
+        why = f"Squidbrake's dashboard at {url} isn't answering: it may be switched off, restarting, or deleted"
+    else:
+        why = f"Squidbrake at {url} is unreachable or misconfigured ({e})"
+    return (f"{why}. Every {what} must go through it, so this was blocked. Tell the user: start it again (or ask "
+            f"whoever runs it). If it was removed on purpose, take Squidbrake out of this computer's agents with: "
+            f"squidbrake connect all --remove")
+
+
 def check(agent: str, name: str, inp: dict, session: str | None) -> None:
     body = {"name": name, "kind": "agent_hook", "input": inp, "source": agent, "session_id": session}
     try:
@@ -127,8 +141,7 @@ def check(agent: str, name: str, inp: dict, session: str | None) -> None:
     except httpx.HTTPError as e:
         if FAIL_OPEN:
             answer(agent, True)
-        answer(agent, False, f"Squidbrake at {URL} is unreachable or misconfigured ({e}). Every action must go through "
-                             "it, so this was blocked. Ask the user to check Squidbrake.")
+        answer(agent, False, unreachable(URL, e))
     if d["decision"] == "allow":
         answer(agent, True)
     if d["decision"] == "review":

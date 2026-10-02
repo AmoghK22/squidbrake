@@ -187,7 +187,7 @@ async function load() {
   document.getElementById("pw2")?.addEventListener("click", () => passwordDialog(true));
   document.getElementById("nf").onsubmit = create;
   document.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
-    if (!confirm(`Delete the pilot ${b.dataset.del} and its stats? Its link stops working.`)) return;
+    if (!confirm(b.dataset.warn)) return;
     await api(`/v1/admin/pilots/${encodeURIComponent(b.dataset.del)}`, { method: "DELETE" }); load();
   });
   document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = () => copy(b.dataset.copy, b));
@@ -214,7 +214,25 @@ function row(p) {
     <td>${agents}</td><td>${hits}</td>
     <td>${followUp(p) ? `<button class="btn" data-copy="${esc(followUp(p))}" title="A message for where they are now">Copy follow-up</button>` : ""}
       <button class="btn" data-copy="${esc(p.link)}">Copy link</button>
-      <button class="icon-btn" title="Delete pilot" data-del="${esc(p.code)}">✕</button></td></tr>`;
+      <button class="icon-btn" title="Delete pilot" data-del="${esc(p.code)}" data-warn="${esc(deleteWarning(p))}">✕</button></td></tr>`;
+}
+
+// Deleting a hosted pilot switches its dashboard off, and Squidbrake fails closed: their agents stop until they remove it
+function deleteWarning(p) {
+  const base = `Delete the pilot ${p.company} (${p.code}) and its stats? Its link stops working.`;
+  if (!p.hosted) return `${base}
+
+Their own Squidbrake keeps working; it just stops sending usage counts here.`;
+  const connected = p.installs > 0 || p.keys_revealed_at;
+  return `${base}
+
+Their hosted dashboard is switched off and its data deleted.` + (connected
+    ? `
+
+THEIR AGENTS WILL STOP WORKING: Squidbrake blocks everything when its dashboard is gone. Ask them to run this first:
+
+squidbrake connect all --remove`
+    : "");
 }
 
 async function create(e) {
