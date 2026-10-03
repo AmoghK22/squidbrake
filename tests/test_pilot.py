@@ -78,6 +78,16 @@ def test_join_ping_leave(insights, tmp_path, monkeypatch):
     p = next(p for p in insights.get("/v1/admin/overview", headers=admin).json()["pilots"] if p["code"] == code)
     assert p["installs"] == 1 and p["agents"] == {"claude-code": 5} and p["total_events"] == 5
 
+    # the weekly scorecard: active today, this week and last week (retention), and how many holds were approved
+    from datetime import date, timedelta
+    today, last_week = date.today().isoformat(), (date.today() - timedelta(days=9)).isoformat()
+    assert pilot.send(tmp_path, {**usage, "days": {today: {"events": 7, "held": 4, "approved": 3, "rejected": 1, "blocked": 1},
+                                                   last_week: {"events": 2}}}) is True
+    d = insights.get("/v1/admin/overview", headers=admin).json()
+    s, p = d["scorecard"], next(p for p in d["pilots"] if p["code"] == code)
+    assert p["active_today"] and p["days_last_week"] == 1
+    assert s["active_today"] >= 1 and s["retained"] >= 1 and s["active_last_week"] >= 1 and s["approve_rate"] is not None
+
     # pings from an install that never joined (or left) are refused
     stranger = {"code": code, "install_id": "f" * 32, "usage": usage}
     assert insights.post("/v1/ping", json=stranger).status_code == 403

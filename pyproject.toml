@@ -67,10 +67,11 @@ packages = ["squidbrake"]
 "demo_apps_mcp.py" = "squidbrake/demo_apps_mcp.py"
 "client.py" = "squidbrake/client.py"
 "rules.yaml" = "squidbrake/rules.yaml"
+"rules.shipped" = "squidbrake/rules.shipped"
 "dashboard.html" = "squidbrake/dashboard.html"
 "approve.html" = "squidbrake/approve.html"
 
 [tool.hatch.build.targets.sdist]
 only-include = ["squidbrake", "server.py", "commands.py", "taint.py", "pilot.py", "verify.py", "connect.py", "claude_hook.py", "agent_hook.py",
-                "gw_async.py", "gateway_proxy.py", "gateway_mcp.py", "demo_apps_mcp.py", "client.py", "rules.yaml",
+                "gw_async.py", "gateway_proxy.py", "gateway_mcp.py", "demo_apps_mcp.py", "client.py", "rules.yaml", "rules.shipped",
                 "dashboard.html", "approve.html", "README.md", "LICENSE", "pyproject.toml"]

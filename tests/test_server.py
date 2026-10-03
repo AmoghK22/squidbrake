@@ -360,6 +360,32 @@ sequences:
     assert post("loop.step", {"i": 4}, source="loop-bot")["decision"] == "deny"    # previous rules kept
 
 
+def test_sequence_across_conversations_and_agents(c, monkeypatch, tmp_path):
+    """after.scope: all catches a chain split across conversations and agents (backups off in one, delete in another)."""
+    rules = tmp_path / "seq-all.yaml"
+    rules.write_text("""
+default: allow
+history_checks: { repeat_of_rejected: off, impersonation: off, payment_request_in_message: off, duplicate_change: off }
+sequences:
+  - id: backup-then-delete
+    action: deny
+    reason: Deleting right after backups were turned off
+    match: { name: "*delete_snapshot*" }
+    after: { match: { input_regex: 'backup_retention\\W{0,4}0\\b' }, scope: all }
+""")
+    monkeypatch.setattr(server, "policy", server.Policy(rules))
+    t = time.time_ns()
+    c.post("/v1/events", headers=H, json={"name": "rds.modify", "input": {"backup_retention": 0, "id": "db9"},
+                                          "session_id": f"a-{t}", "source": "infra-bot"})
+    d = c.post("/v1/events", headers=H, json={"name": "rds.delete_snapshot", "input": {"id": "db9"},
+                                              "session_id": f"b-{t}", "source": "cleanup-bot"}).json()
+    assert d["decision"] == "deny" and d["rule_id"] == "sequence:backup-then-delete"
+    assert "Because earlier (by infra-bot): rds.modify" in d["reason"]
+
+    with pytest.raises(ValueError, match="after.scope"):
+        server.Policy._compile_sequences([{"id": "x", "match": {"name": "a"}, "after": {"match": {"name": "b"}, "scope": "everywhere"}}])
+
+
 def test_shadow_mode(c, monkeypatch, tmp_path):
     rules = tmp_path / "shadow.yaml"
     rules.write_text("""
@@ -543,6 +569,48 @@ rules:
     rules.write_text("rules: [{ action: deny, match: { input: { amount: { bigger: 5 } } } }]")
     os.utime(rules, (time.time(), time.time() + 5))
     assert decide("stripe.payments_refund", {"amount": 250}) == "review"  # bad op: previous rules kept
+
+
+def test_shipped_rules_let_coding_work_run_and_hold_the_guard_rails():
+    """Everyday coding work must not wait for a person (people uninstall over approval fatigue), but an agent
+    changing its own settings, hooks or MCP servers, Squidbrake's rules, or a secrets file must."""
+    p = server.Policy(Path(__file__).resolve().parents[1] / "rules.yaml")
+
+    def decide(name, inp):
+        return p.evaluate(kind="claude_code", name=name, source="claude-code", client="test", session_id=None, input=inp)[0]
+
+    for name, inp in [("Edit", {"file_path": "src/app.py"}), ("Write", {"file_path": "src/new.py"}),
+                      ("Write", {"file_path": ".env.example"}), ("Bash", {"command": "npm test"}),
+                      ("Bash", {"command": "git commit -m fix"}), ("PowerShell", {"command": "dotnet build"})]:
+        assert decide(name, inp) == "allow", (name, inp)
+    for name, inp in [("Edit", {"file_path": "C:\\Users\\a\\.claude\\settings.json"}),
+                      ("Write", {"file_path": "/home/a/.cursor/mcp.json"}), ("Write", {"file_path": "/home/a/.squidbrake/rules.yaml"}),
+                      ("Bash", {"command": "echo x > ~/.codex/hooks.json"}), ("Write", {"file_path": ".env"}),
+                      ("Edit", {"file_path": "/home/a/.bashrc"}), ("Write", {"file_path": ".git/hooks/pre-commit"}),
+                      ("Bash", {"command": "git push origin main"})]:
+        assert decide(name, inp) == "review", (name, inp)
+    assert decide("Bash", {"command": "rm -rf " + "~/"}) == "deny"
+
+
+def test_unedited_rules_from_an_older_release_are_updated(tmp_path):
+    """pip upgrades don't touch ~/.squidbrake/rules.yaml: an unedited copy of an older release's rules is replaced
+    (with a backup), an edited one is left alone."""
+    import hashlib
+    root = Path(__file__).resolve().parents[1]
+    shipped, known = root / "rules.yaml", root / "rules.shipped"
+    current = hashlib.sha256(shipped.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    assert current in known.read_text(encoding="utf-8"), "add the current rules.yaml's sha256 to rules.shipped"
+
+    old = b"default: review\nrules: []\n"
+    fake_known = tmp_path / "known"
+    fake_known.write_text(hashlib.sha256(old).hexdigest() + "\n" + current + "\n", encoding="utf-8")
+    mine = tmp_path / "rules.yaml"
+    mine.write_bytes(old.replace(b"\n", b"\r\n"))                                     # CRLF: same file on Windows
+    assert server.update_unedited_rules(mine, shipped, fake_known) is True
+    assert mine.read_bytes() == shipped.read_bytes() and list(tmp_path.glob("rules.yaml.bak-*"))
+
+    mine.write_bytes(old + b"# my own rule\n")                                        # edited: never touched
+    assert server.update_unedited_rules(mine, shipped, fake_known) is False and b"my own rule" in mine.read_bytes()
 
 
 def test_slack_example_policy():

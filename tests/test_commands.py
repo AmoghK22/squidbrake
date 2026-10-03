@@ -37,7 +37,7 @@ def test_catastrophic(line):
 
 
 @pytest.mark.parametrize("line", [
-    "rm -r build", "rm -rf node_modules", "rm notes.txt", "find . -name '*.pyc' -delete", "find . -exec rm -f {} ;",
+    "rm -r src", "rm -rf ../node_modules", "rm -rf /tmp/build", "rm -rf node_modules src", "rm notes.txt", "find . -name '*.pyc' -delete", "find . -exec rm -f {} ;",
     "find / | xargs rm -rf",               # targets come from stdin, so it can't tell where: still held
     "git push --force origin main", "git push -f", "git push origin +main", "git push origin :old-branch",
     "git reset --hard HEAD~3", "git clean -fdx", "git branch -D feature", "git checkout -- .", "git stash drop",
@@ -127,6 +127,12 @@ def test_macos_disk_inspection_is_not_destructive(line):
 def test_windows_inspection_is_not_destructive(line):
     assert kind(line) not in ("catastrophic", "irreversible")
 
+
+@pytest.mark.parametrize("line", ["rm -rf node_modules", "rm -r build", "rm -rf ./dist .next/", "rm -rf web/node_modules",
+                                 "Remove-Item -Recurse -Force node_modules", "rmdir /s /q build"])
+def test_deleting_build_output_is_everyday_work(line):
+    """Build output and caches come back with the next build: deleting them isn't held (approval fatigue)."""
+    assert kind(line) == "other", commands.read(line).summary()
 
 def test_command_of():
     assert commands.command_of({"command": "ls -la"}) == "ls -la"

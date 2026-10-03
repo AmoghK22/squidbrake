@@ -158,11 +158,17 @@ async function load() {
       <button class="btn" id="logout">Log out</button></header>
     ${me.has_password ? "" : `<div class="panel" style="padding:12px 16px;border-color:var(--warn)"><b>Set your own password</b>
       <span class="sub">so you don't have to use the server key.</span> <button class="btn" id="pw2">Set password</button></div>`}
-    <div class="cards">
-      ${card("Pilots", d.pilots.length)}${card("Active now", d.active_pilots)}${card("Installs", d.installs)}
-      ${card("Actions, 7 days", w.events)}${card("Held for a person", w.held)}${card("Approved", w.approved)}
-      ${card("Blocked", w.blocked)}${card("Would block (shadow)", w.would_block)}
-    </div>
+    <section class="panel"><h2>This week <button class="btn" style="margin-left:auto" data-copy="${esc(weeklyReport(d))}">Copy weekly report</button></h2>
+      <div class="cards" style="padding:14px 16px 0;margin-bottom:10px">
+        ${card("Active today", d.scorecard.active_today)}${card("Active this week", d.scorecard.active_this_week)}
+        ${card("3+ days this week", d.scorecard.active_3_plus_days)}
+        ${cardText("Back from last week", `${d.scorecard.retained} of ${d.scorecard.active_last_week}`)}
+        ${card("Held for a person", w.held)}${card("Blocked", w.blocked)}
+        ${cardText("Holds approved", d.scorecard.approve_rate === null ? "–" : d.scorecard.approve_rate + "%",
+                   d.scorecard.approve_rate > 90 ? "Over 90%: the rules hold things people are fine with" : "")}
+      </div>
+      <div class="sub" style="padding:0 16px 14px">${d.pilots.length} pilots · ${d.installs} installs · ${w.events.toLocaleString()} actions this week${w.would_block ? ` · ${w.would_block} would block (shadow)` : ""}</div>
+    </section>
     <section class="panel"><h2>New pilot</h2>
       <form class="new" id="nf"><input id="nc" placeholder="Company (e.g. Acme)" required maxlength="80">
         <input id="nk" placeholder="Contact (name, email, phone)" maxlength="120">
@@ -194,6 +200,19 @@ async function load() {
 }
 
 const card = (k, v) => `<div class="card"><div class="k">${k}</div><div class="v">${Number(v || 0).toLocaleString()}</div></div>`;
+const cardText = (k, v, warn = "") => `<div class="card"${warn ? ` title="${esc(warn)}" style="border-color:var(--warn)"` : ""}><div class="k">${k}</div><div class="v">${esc(v)}</div>${warn ? `<div class="mini">${esc(warn)}</div>` : ""}</div>`;
+
+// What to send a cofounder or an investor every week: usage, not output
+function weeklyReport(d) {
+  const s = d.scorecard, w = d.week, day = new Date().toISOString().slice(0, 10);
+  const lines = [`Squidbrake pilots, week to ${day}`,
+    `Active today: ${s.active_today} · this week: ${s.active_this_week} · 3+ days this week: ${s.active_3_plus_days} (of ${d.pilots.length} pilots, ${d.installs} installs)`,
+    `Back from last week: ${s.retained} of ${s.active_last_week}`,
+    `Actions: ${w.events} · held for a person: ${w.held} (approved ${w.approved}, rejected ${w.rejected}) · blocked: ${w.blocked}`,
+    `Holds approved: ${s.approve_rate === null ? "none decided yet" : s.approve_rate + "%"}`, "", "Per pilot:"];
+  for (const p of d.pilots) lines.push(`- ${p.company}: active ${p.days_this_week}/7 days, ${p.week.events} actions, ${p.week.held} held, ${p.week.blocked} blocked (${p.stage})`);
+  return lines.join("\n");
+}
 
 function row(p) {
   const [label, cls] = STAGE[p.stage] || [p.stage, "s-sent"];

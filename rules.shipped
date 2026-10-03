@@ -1,0 +1,9 @@
+# sha256 of every rules.yaml Squidbrake has shipped (LF line endings). A ~/.squidbrake/rules.yaml that still
+# matches one of these was never edited, so it's safe to update to the current one on start.
+1965fe88f6a43eeb8b9b363ecf7d2b0baba3f5e877857731d8b21302337c65a6
+356846e6754e1f4b0bceb64197f708dbb63f75840f911537eec23f260debf305
+d81b9bf6707b48b1c85619e8de4b91c77c96b0cdcf2b2be671bdc76dc81c5ff1
+91a6a07dc8d7b29ec8bb28aaa4ac5852e7feb610175dc9543ff7b01f03077616
+4d5892c46196fa6557358c67998736fc30e8f858c3ba791aa005b55301fac4af
+53f6dce0b8f5c10048f14ba9e1ff509ed9abc040d25510f0c8689fb284006182
+d2064e3ff96658c06db8d3ea7df73348ed153ba6d9959667f5687ec7fda8482a

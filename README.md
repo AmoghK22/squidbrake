@@ -320,7 +320,22 @@ No. Squidbrake uses **deterministic rules and checks**. There is no LLM in the d
 
 ### Can an agent get around Squidbrake?
 
-An agent cannot bypass Squidbrake through tools that are connected to the gateway. An agent could still use a tool that **isn't connected to Squidbrake**. See [`SECURITY.md`](SECURITY.md) for the security model and limitations.
+Squidbrake is built for the common case: a **cooperative agent that makes a mistake** or follows instructions it found
+in an email, a web page or an issue. It is not a sandbox against an agent that is deliberately trying to escape.
+Here's what that means in practice:
+
+- **Caught:** what the agent does through a connected tool. That includes shell commands read before they run
+  (`ls && rm -rf ~/`, `bash -c "..."`, `curl ... | sh`), MCP calls, edits to its own settings, hooks and MCP servers
+  or to Squidbrake's rules (held for a person), and chains of steps such as backups switched off and then a delete.
+- **Not caught:**
+  - Code the agent writes and then runs. `python cleanup.py` is read as one command, and what the script does
+    inside isn't seen.
+  - Tools that aren't connected (`squidbrake connect status` shows which are).
+  - Damage done inside an MCP server after the call it checks: see the postmark-mcp row in [`incidents/`](incidents/).
+- **For a hostile agent,** add a sandbox (a container or a VM, with no credentials it doesn't need) underneath.
+  Squidbrake then decides what is allowed, and the sandbox makes sure nothing goes around it.
+
+See [`SECURITY.md`](SECURITY.md) for the full security model.
 
 ## Querying
 

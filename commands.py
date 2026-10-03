@@ -418,6 +418,20 @@ def classify(words: list[str], raw: str = "", depth: int = 0) -> tuple[list[Comm
     return [cmd], []
 
 
+REGENERABLE = {"node_modules", "dist", "build", "out", ".next", ".nuxt", ".svelte-kit", ".turbo", ".cache", ".parcel-cache",
+               "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".venv", "venv", "coverage",
+               ".coverage", "htmlcov", "target", ".gradle"}
+
+
+def _regenerable(target: str) -> bool:
+    """A build output or cache folder inside the project (relative path, no wildcards, no climbing out)."""
+    t = target.strip("'\"").replace("\\", "/").rstrip("/")
+    if not t or t.startswith(("/", "~", "$", "%")) or re.match(r"^[a-z]:", t, re.I) or any(c in t for c in "*?[{"):
+        return False
+    parts = [p for p in t.split("/") if p not in ("", ".")]
+    return bool(parts) and ".." not in parts and parts[-1].lower() in REGENERABLE
+
+
 def _deletion(cmd: Command, words: list[str], prog: str) -> Command:
     lower = [w.lower() for w in words]
     letters = _short_letters(words)
@@ -431,6 +445,8 @@ def _deletion(cmd: Command, words: list[str], prog: str) -> Command:
             else "a whole drive" if re.match(r"^[a-z]:[\\/]?\*?$", where, re.I) else "the whole filesystem" if where.startswith("/") and len(where.rstrip("/*")) == 0 \
             else f"the system folder {where}"
         cmd.kind, cmd.why = "catastrophic", f"deletes {label} ({' '.join(words)})"
+    elif targets and all(_regenerable(t) for t in targets):
+        cmd.kind = "other"                       # rm -rf node_modules dist: everyday work, rebuilt by the next build
     elif recursive:
         cmd.kind, cmd.why = "irreversible", f"deletes folders and everything in them ({' '.join(words)})"
     else:

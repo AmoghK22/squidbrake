@@ -82,10 +82,29 @@ except ImportError:
 def _default_rules() -> Path:
     """rules.yaml in HOME_DIR; a pip install starts from a copy of the shipped one, which you then edit."""
     path = HOME_DIR / "rules.yaml"
-    if not path.exists() and (BASE_DIR / "rules.yaml").exists() and HOME_DIR != BASE_DIR:
-        HOME_DIR.mkdir(parents=True, exist_ok=True)
-        path.write_bytes((BASE_DIR / "rules.yaml").read_bytes())
+    if (BASE_DIR / "rules.yaml").exists() and HOME_DIR != BASE_DIR:
+        if not path.exists():
+            HOME_DIR.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((BASE_DIR / "rules.yaml").read_bytes())
+        else:
+            update_unedited_rules(path, BASE_DIR / "rules.yaml", BASE_DIR / "rules.shipped")
     return path
+
+
+def update_unedited_rules(path: Path, shipped: Path, known: Path) -> bool:
+    """A rules.yaml copied from an older release and never edited gets this release's rules (the old file is kept
+    as a backup). An edited one is left alone. `known` lists the sha256 of every rules.yaml ever shipped."""
+    import hashlib
+    digest = lambda b: hashlib.sha256(b.replace(b"\r\n", b"\n")).hexdigest()
+    mine, current = path.read_bytes(), shipped.read_bytes()
+    if digest(mine) == digest(current) or not known.exists() or digest(mine) not in known.read_text(encoding="utf-8"):
+        return False
+    backup = path.with_name(f"rules.yaml.bak-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    backup.write_bytes(mine)
+    path.write_bytes(current)
+    print(f"Squidbrake: updated {path} to this version's rules (you hadn't edited it). The old one is {backup.name}.",
+          file=sys.stderr)
+    return True
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(HOME_DIR / 'data' / 'gateway.db').as_posix()}")
@@ -658,9 +677,12 @@ class Policy:
             seq = {"id": rid, "action": action, "reason": r.get("reason") or rid,
                    "match": cls._compile_match(r.get("match") or {}), "after": None, "count": None}
             if after:
+                scope = after.get("scope", "session")
+                if scope not in ("session", "agent", "all"):
+                    raise ValueError(f"sequences.{rid}: after.scope must be session | agent | all")
                 seq["after"] = {"match": cls._compile_match(after.get("match") or {}),
                                 "within_hours": float(after.get("within_hours", 24)),
-                                "same_target": bool(after.get("same_target", False))}
+                                "same_target": bool(after.get("same_target", False)), "scope": scope}
             if count:
                 scope = count.get("scope", "agent")
                 if scope not in ("session", "agent", "all") or "more_than" not in count:
@@ -1050,8 +1072,9 @@ def sequence_signals(conn, ev: "EventIn", client: str) -> list[dict]:
         message = None
         if seq["after"]:
             a = seq["after"]
-            scope = events.c.session_id == ev.session_id if ev.session_id else and_(events.c.source == ev.source,
-                                                                                    events.c.client == client)
+            same_agent = and_(events.c.source == ev.source, events.c.client == client)
+            scope = {"session": events.c.session_id == ev.session_id if ev.session_id else same_agent,
+                     "agent": same_agent, "all": events.c.id.isnot(None)}[a["scope"]]
             target = _target(ev.input)
             for r in earlier(a["within_hours"], scope):
                 if r.status not in ("completed", "pending"):      # only steps that actually went ahead
@@ -1061,7 +1084,9 @@ def sequence_signals(conn, ev: "EventIn", client: str) -> list[dict]:
                 prev = _target(stored(r))
                 if a["same_target"] and not (target and prev and prev[1].lower() == target[1].lower()):
                     continue
-                message, ref = f"{seq['reason']}. Because earlier: {_step_phrase(r)}.", r.id
+                where = "" if r.session_id and r.session_id == ev.session_id else \
+                    " (in another conversation)" if r.source == ev.source else f" (by {r.source or 'another agent'})"
+                message, ref = f"{seq['reason']}. Because earlier{where}: {_step_phrase(r)}.", r.id
                 break
         if seq["count"] and message is None:
             c = seq["count"]

@@ -1,7 +1,9 @@
 # Squidbrake rules - hot-reloaded on save, no restart needed.
 #
-# Policy: agents may LOOK at anything (read, list, search), but anything that CHANGES something
-# (sends, refunds, pays, updates, deletes, runs a command) waits for a person to approve it.
+# Policy: agents may LOOK at anything (read, list, search). Coding agents do everyday work on their own (edits,
+# tests, builds, commits), but what can't be undone waits for a person and what's catastrophic is blocked. Any other
+# change (sends, refunds, pays, updates, deletes, pushes) waits for a person, and so does an agent changing its own
+# settings, hooks or MCP servers, Squidbrake's rules, or a secrets file.
 #
 # Rules are checked top to bottom; the FIRST match wins. If none match, `default` applies.
 # match fields (all optional, all must match):
@@ -72,7 +74,8 @@ taint_checks:
 
 # Sequence rules judge an action by what came BEFORE it, and say which earlier step caused it.
 #   match   this action (same fields as rules: name, source, input_regex, input, ...)
-#   after   an earlier step in the same conversation that went ahead, within within_hours (default 24);
+#   after   an earlier step that went ahead, within within_hours (default 24);
+#           scope: session (the same conversation, the default) | agent (any conversation of this agent) | all (any agent);
 #           same_target: true = only if it was on the same thing (same charge, file, account ...)
 #   count   more than `more_than` earlier matching actions within within_hours; scope: session | agent | all
 #   action  deny | review | warn
@@ -86,6 +89,7 @@ sequences:
       match:
         input_regex: 'backup[-_ ]?retention[-_ ]?period\W{0,4}0\b|disable[-_ ]?backup|delete[-_ ]?(db[-_ ]?)?snapshot|deletion[-_ ]?protection\W{0,4}(false|0)\b|no-deletion-protection|point[-_ ]?in[-_ ]?time[-_ ]?recovery\W{0,4}(false|disabled)'
       within_hours: 24
+      scope: all          # backups switched off by any agent, in any conversation, then a delete
 
   - id: runaway-refunds
     action: deny
@@ -121,6 +125,15 @@ rules:
     match:
       name: ["read*", "file*", "cat*"]
       input_regex: '\.env\b|id_rsa|\.pem\b|credentials'
+
+  # ---- an agent changing its own guard rails: its settings, hooks and MCP servers, Squidbrake's own files,
+  # secrets, and files that run code at login or on every commit. Squidbrake would be easy to switch off without this.
+  - id: approve-guard-rail-changes
+    action: review
+    reason: Changes an AI agent's own settings, hooks or MCP servers, Squidbrake itself, a secrets file, or code that runs at login
+    match:
+      name: ["Edit", "Write", "MultiEdit", "NotebookEdit", "bash*", "powershell*", "shell*", "run_command*"]
+      input_regex: '(?i)\.(claude|cursor|codex|gemini|copilot|kiro|codeium|windsurf|squidbrake)[\\/]|mcp(_config)?\.json|claude_desktop_config\.json|\.vscode[\\/]+(mcp|tasks)\.json|\.env\b(?!\.?(example|sample|template))|\.ssh[\\/]|\.aws[\\/]|\.(npmrc|pypirc|netrc)\b|\.(bashrc|zshrc|bash_profile|zprofile|profile)\b|PowerShell_profile\.ps1|\.git[\\/]+hooks[\\/]'
 
   # ---- looking is fine: reading, listing, searching run without asking (and are still recorded)
   - id: allow-reads
@@ -180,6 +193,15 @@ rules:
     match:
       name: ["deploy*", "release*"]
       input_regex: '\bprod(uction)?\b'
+
+  # ---- coding agents: everyday work runs on its own, so nobody turns Squidbrake off out of approval fatigue.
+  # The command checks still hold what can't be undone (git push --force, cloud deletes, DROP TABLE, curl | sh)
+  # and block what's catastrophic (rm -rf ~/, wiping a disk); the rule above holds changes to the guard rails.
+  - id: allow-coding-work
+    action: allow
+    reason: Everyday coding work (edits, tests, builds, installs, commits)
+    match:
+      name: ["Edit", "Write", "MultiEdit", "NotebookEdit", "Bash", "PowerShell"]
 
 # Upstreams for the HTTP proxy:  /proxy/<name>/<path>  ->  <url>/<path>
 upstreams:

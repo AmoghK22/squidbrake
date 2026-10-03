@@ -403,6 +403,9 @@ def overview(request: Request):
             for k, v in json.loads(i["rules_hit"] or "{}").items(): hits[k] = hits.get(k, 0) + v
         week = {k: sum(daily[d][k] for d in span[-7:]) for k in SUMS}
         for k in SUMS: totals[k] += week[k]
+        active_days = [d for d in span if daily[d]["events"]]
+        days_this_week = sum(1 for d in active_days if d in span[-7:])
+        days_last_week = len(active_days) - days_this_week
         active = [i for i in mine if not i["left_at"]]
         last = max((i["last_seen"] or "" for i in active), default="")
         stage = ("left" if mine and not active else "active" if seen_within(last, 48) and week["events"] else
@@ -423,10 +426,28 @@ def overview(request: Request):
                     "last_seen": last or None, "versions": sorted({i["version"] for i in active if i["version"]}),
                     "modes": sorted({i["mode"] for i in active if i["mode"]}), "agents": agents,
                     "rules_hit": dict(sorted(hits.items(), key=lambda kv: -kv[1])[:6]), "week": week,
-                    "daily": [daily[d]["events"] for d in span], "total_events": sum(i["total_events"] or 0 for i in mine)})
+                    "daily": [daily[d]["events"] for d in span], "total_events": sum(i["total_events"] or 0 for i in mine),
+                    "active_today": bool(daily[span[-1]]["events"]), "days_this_week": days_this_week,
+                    "days_last_week": days_last_week})
     return {"span": span, "pilots": out, "week": totals,
             "active_pilots": sum(1 for p in out if p["stage"] == "active"),
-            "installs": sum(p["installs"] for p in out)}
+            "installs": sum(p["installs"] for p in out), "scorecard": scorecard(out, totals)}
+
+
+def scorecard(pilots: list[dict], week: dict) -> dict:
+    """The numbers that say whether pilots use it, week over week: what an investor (or a kill criterion) asks for."""
+    last_week = [p for p in pilots if p["days_last_week"]]
+    decided = week["approved"] + week["rejected"]
+    return {
+        "active_today": sum(1 for p in pilots if p["active_today"]),
+        "active_this_week": sum(1 for p in pilots if p["days_this_week"]),
+        "active_3_plus_days": sum(1 for p in pilots if p["days_this_week"] >= 3),
+        "retained": sum(1 for p in last_week if p["days_this_week"]), "active_last_week": len(last_week),
+        "actions": week["events"], "held": week["held"], "blocked": week["blocked"],
+        "approved": week["approved"], "rejected": week["rejected"],
+        # most holds approved means the rules hold things people are fine with: noise that gets Squidbrake switched off
+        "approve_rate": round(100 * week["approved"] / decided) if decided else None,
+    }
 
 
 # --------------------------------------------------------------------------- pages
