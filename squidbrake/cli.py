@@ -6,6 +6,9 @@ The `squidbrake` command (installed with pip):
   squidbrake connect claude-code     connect one agent
   squidbrake connect status          which agents are covered (and whether Codex has trusted the hook)
   squidbrake hook                    the Claude Code hook, used by the Claude Code plugin (plugin/)
+  squidbrake agent-hook AGENT        the hook for cursor, codex, gemini-cli, vscode, antigravity
+  squidbrake lockdown --url URL      policy files IT pushes to every machine so agents can't skip the gateway
+  squidbrake evidence --days 90      a printable evidence pack for your auditor
   squidbrake proxy --app NAME -- CMD an MCP server that checks every call to the app's MCP server CMD first
                                      (same as: python gateway_proxy.py ...)
   squidbrake pilot join CODE --server URL   share usage counts with a pilot (asks first; see pilot.py)
@@ -39,6 +42,11 @@ def main() -> int:
         sys.argv = ["claude_hook.py", *argv[1:]]
         import claude_hook
         claude_hook.main()
+        return 0
+    if argv[:1] == ["agent-hook"]:  # the hook for Cursor, Codex, Gemini CLI, VS Code, Antigravity (see lockdown.py)
+        sys.argv = ["agent_hook.py", *argv[1:]]
+        import agent_hook
+        agent_hook.main()
         return 0
     if argv[:1] == ["proxy"]:  # an MCP server: put Squidbrake in front of any app's MCP server
         sys.argv = ["squidbrake proxy", *argv[1:]]

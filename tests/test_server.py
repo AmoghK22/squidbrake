@@ -719,6 +719,49 @@ def test_role_based_approvers(c, org):
     assert c.post(f"/v1/events/{eid}/approve", headers=org["finance-lead"]).json()["decision"] == "allow"
 
 
+def test_second_person_approval(c, org, monkeypatch):
+    r = c.post("/v1/team", headers=org["admin"], json={"name": "admins-laptop", "kind": "agent", "owner": "admin"}).json()
+    laptop = {"X-Gateway-Key": r["key"]}
+    names = {m["name"]: m for m in c.get("/v1/team", headers=org["viewer"]).json()["members"]}
+    assert names["admins-laptop"]["owner"] == "admin"
+    # an owner must be an existing person
+    assert c.post("/v1/team", headers=org["admin"], json={"name": "x", "kind": "agent", "owner": "agent"}).status_code == 400
+    assert c.post("/v1/team", headers=org["admin"], json={"name": "y", "kind": "person", "owner": "admin"}).status_code == 400
+
+    def held():
+        return c.post("/v1/events", headers=laptop, json={"name": "payments.refund"}).json()["event_id"]
+
+    eid = held()  # off by default: the owner may approve their own agent (solo use)
+    assert c.post(f"/v1/events/{eid}/approve", headers=org["admin"]).json()["decision"] == "allow"
+    c.put("/v1/settings", headers=org["admin"], json={"second_person": True})
+    assert c.get("/v1/settings", headers=org["admin"]).json()["second_person"] is True
+    eid = held()
+    r = c.post(f"/v1/events/{eid}/approve", headers=org["admin"])
+    assert r.status_code == 403 and "someone else" in r.json()["detail"]
+    assert c.post(f"/v1/events/{eid}/approve", headers=org["finance-lead"]).json()["decision"] == "allow"
+    c.patch("/v1/team/admins-laptop", headers=org["admin"], json={"owner": ""})
+    assert c.post(f"/v1/events/{held()}/approve", headers=org["admin"]).json()["decision"] == "allow"
+    c.put("/v1/settings", headers=org["admin"], json={"second_person": False})
+
+
+def test_evidence_pack(c, org, tmp_path):
+    r = c.post("/v1/team", headers=org["admin"], json={"name": "ev-laptop", "kind": "agent", "owner": "admin"}).json()
+    laptop = {"X-Gateway-Key": r["key"]}
+    eid = c.post("/v1/events", headers=laptop, json={"name": "payments.refund"}).json()["event_id"]
+    c.post(f"/v1/events/{eid}/approve", headers=org["finance-lead"])
+    c.post("/v1/events", headers=laptop, json={"name": "shell.exec", "input": {"cmd": "rm -rf /"}})
+    assert c.get("/v1/audit/evidence-pack", headers=org["agent"]).status_code == 403  # agents can't read history
+    page = c.get("/v1/audit/evidence-pack?days=30", headers=org["viewer"])
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+    html = page.text
+    for words in ("AI agent evidence pack", "intact", "CC8.1", "Art. 14", "CERT-In", "team.added", "finance-lead"):
+        assert words in html, words
+    ev = server.build_evidence(30, "test")
+    assert ev["second_person"]["by_someone_else"] >= 1 and ev["team"]["agents_with_owner"] >= 1
+    assert ev["policy"]["rules"] == len(server.policy.rules)
+    assert "<script" not in html  # a static page: names and reasons are escaped, nothing runs
+
+
 def test_emergency_stop(c, org):
     assert c.post("/v1/controls/stop", headers=org["viewer"], json={}).status_code == 403  # viewers can't
     c.post("/v1/controls/stop", headers=org["finance-lead"], json={"agent": "rogue-bot", "reason": "looping"})

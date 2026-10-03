@@ -59,6 +59,8 @@ from sqlalchemy import (
 )
 
 import commands
+import evidence
+import lockdown
 import pilot
 import taint
 import verify
@@ -206,7 +208,7 @@ class KeyStore:
         if roles is None:  # keys.json from before teams existed
             roles = ["admin"] if name == "admin" and approver else []
         return {"kind": k.get("kind") or ("person" if approver else "agent"), "approver": approver,
-                "roles": list(roles), "created_at": k.get("created_at")}
+                "roles": list(roles), "owner": k.get("owner"), "created_at": k.get("created_at")}
 
     @property
     def enabled(self) -> bool:
@@ -292,7 +294,8 @@ class KeyStore:
                 out.append(r)
         return out
 
-    def add(self, name: str, approver: bool = False, kind: str | None = None, roles: list[str] | None = None) -> str:
+    def add(self, name: str, approver: bool = False, kind: str | None = None, roles: list[str] | None = None,
+            owner: str | None = None) -> str:
         self._guard_env()
         if not KEY_NAME_RE.match(name):
             raise ValueError("use letters, digits, '.', '_', '-' or '@' (max 64), e.g. 'alice' or 'billing-agent'")
@@ -304,13 +307,29 @@ class KeyStore:
         data = self._read()
         if name in data["keys"]:
             raise ValueError(f"a key named '{name}' already exists (remove it first to replace it)")
+        owner = self._check_owner(data, kind, owner)
         secret = "gw_" + secrets.token_urlsafe(24)
         data["keys"][name] = {"sha256": _hash(secret), "kind": kind, "approver": approver,
                               "roles": self._clean_roles(roles), "created_at": utcnow()}
+        if owner:
+            data["keys"][name]["owner"] = owner
         self._write(data)
         return secret
 
-    def update(self, name: str, approver: bool | None = None, roles: list[str] | None = None) -> dict:
+    def _check_owner(self, data: dict, kind: str, owner: str | None) -> str | None:
+        """An agent's owner is the person it works for (it runs on their laptop). With second-person
+        approval on, the owner can't approve what their own agent asks for."""
+        if not owner:
+            return None
+        if kind != "agent":
+            raise ValueError("only an agent has an owner")
+        k = data["keys"].get(owner)
+        if k is None or self._normalize(owner, k)["kind"] != "person":
+            raise ValueError(f"owner '{owner}' must be an existing person key")
+        return owner
+
+    def update(self, name: str, approver: bool | None = None, roles: list[str] | None = None,
+               owner: str | None = None) -> dict:
         self._guard_env()
         data = self._read()
         if name not in data["keys"]:
@@ -321,6 +340,10 @@ class KeyStore:
             raise ValueError("agents can't approve or have roles")
         k.update(kind=current["kind"], approver=current["approver"] if approver is None else approver,
                  roles=current["roles"] if roles is None else self._clean_roles(roles))
+        if owner == "":
+            k.pop("owner", None)
+        elif owner is not None:
+            k["owner"] = self._check_owner(data, current["kind"], owner)
         self._write(data)
         return self._normalize(name, k)
 
@@ -1263,7 +1286,8 @@ def settings() -> dict:
     """Notification settings: env vars are the defaults, the dashboard's Settings page overrides them."""
     defaults = {"public_url": PUBLIC_URL, "slack_webhook": APPROVAL_WEBHOOK_URL,
                 "ntfy_topic": os.getenv("NTFY_TOPIC", ""), "ntfy_server": os.getenv("NTFY_SERVER", "https://ntfy.sh"),
-                "notify_as": os.getenv("NOTIFY_APPROVER", "admin"), "weekly_digest": True}
+                "notify_as": os.getenv("NOTIFY_APPROVER", "admin"), "weekly_digest": True,
+                "second_person": os.getenv("SECOND_PERSON_APPROVAL", "").lower() in ("1", "true", "yes")}
     return {**defaults, **state_get("settings", {})}
 
 
@@ -1407,6 +1431,10 @@ def decide(event_id: str, outcome: Literal["allow", "deny"], who: str, note: str
             raise HTTPException(403, f"rule '{row.rule_id}' only accepts approval from: {', '.join(allowed)}")
         if keystore.enabled and who == row.client:
             raise HTTPException(403, "a key cannot approve its own request")
+        owner = keystore.info(row.client).get("owner") if keystore.enabled else None
+        if owner and owner == who and settings().get("second_person"):
+            raise HTTPException(403, f"'{row.client}' is {who}'s own agent and second-person approval is on, "
+                                     "so someone else has to decide")
         # Conditional update: if two approvers click at once, exactly one wins.
         won = conn.execute(update(events).where(
             events.c.id == event_id, events.c.status == "awaiting_approval",
@@ -1660,11 +1688,13 @@ class MemberIn(BaseModel):
     kind: Literal["person", "agent"] = "person"
     approver: bool = False
     roles: list[str] = Field(default_factory=list)
+    owner: str | None = Field(None, max_length=64, description="for an agent: the person it works for")
 
 
 class MemberPatch(BaseModel):
     approver: bool | None = None
     roles: list[str] | None = None
+    owner: str | None = Field(None, max_length=64, description="for an agent: the person it works for ('' clears it)")
 
 
 def _team_call(fn):
@@ -1681,9 +1711,9 @@ def team_list(_: str = Depends(person)):
 
 @app.post("/v1/team")
 def team_add(m: MemberIn, who: str = Depends(admin)):
-    secret = _team_call(lambda: keystore.add(m.name, approver=m.approver, kind=m.kind, roles=m.roles))
+    secret = _team_call(lambda: keystore.add(m.name, approver=m.approver, kind=m.kind, roles=m.roles, owner=m.owner))
     with audited_tx() as conn:
-        audit(conn, who, "team.added", m.name, kind=m.kind, approver=m.approver, roles=m.roles)
+        audit(conn, who, "team.added", m.name, kind=m.kind, approver=m.approver, roles=m.roles, owner=m.owner)
     return {"name": m.name, "key": secret, "note": "shown once; the gateway keeps only a hash"}
 
 
@@ -1691,9 +1721,9 @@ def team_add(m: MemberIn, who: str = Depends(admin)):
 def team_update(name: str, p: MemberPatch, who: str = Depends(admin)):
     if name == who and p.roles is not None and "admin" not in p.roles:
         raise HTTPException(400, "you can't remove your own admin role")
-    info = _team_call(lambda: keystore.update(name, approver=p.approver, roles=p.roles))
+    info = _team_call(lambda: keystore.update(name, approver=p.approver, roles=p.roles, owner=p.owner))
     with audited_tx() as conn:
-        audit(conn, who, "team.updated", name, approver=info["approver"], roles=info["roles"])
+        audit(conn, who, "team.updated", name, approver=info["approver"], roles=info["roles"], owner=info["owner"])
     return {"name": name, **info}
 
 
@@ -1775,6 +1805,7 @@ class SettingsIn(BaseModel):
     ntfy_server: str | None = Field(None, max_length=300)
     notify_as: str | None = Field(None, max_length=64)
     weekly_digest: bool | None = None
+    second_person: bool | None = None
 
 
 @app.get("/v1/settings")
@@ -1951,6 +1982,53 @@ def build_report(days: int) -> dict:
                        "would_block": sum(a["would_block"] or 0 for a in agents),
                        "would_hold": sum(a["would_hold"] or 0 for a in agents)},
             "audit": verify_audit_chain()}
+
+
+CONTROL_CHANGES = ("team.", "settings.", "controls.", "policy.version")
+
+
+def build_evidence(days: int, who: str) -> dict:
+    """The numbers behind the evidence pack (evidence.py renders them)."""
+    rep = build_report(days)
+    since = rep["since"]
+    with engine.connect() as conn:
+        changes = [dict(r._mapping) for r in conn.execute(
+            select(audit_trail.c.at, audit_trail.c.actor, audit_trail.c.action, audit_trail.c.target)
+            .where(audit_trail.c.at >= since, or_(*[audit_trail.c.action.startswith(c) for c in CONTROL_CHANGES]))
+            .order_by(audit_trail.c.seq).limit(500))]
+        versions = conn.execute(select(func.count()).select_from(policy_versions)
+                                .where(policy_versions.c.first_seen >= since)).scalar() or 0
+        decided = conn.execute(select(events.c.client, events.c.decided_by).where(
+            events.c.created_at >= since, events.c.decided_by.isnot(None), events.c.decided_by != "timeout")).all()
+    members = keystore.listing() if keystore.enabled else []
+    owners = {m["name"]: m.get("owner") for m in members if m["kind"] == "agent"}
+    sp = {"enforced": bool(settings().get("second_person")), "decided": len(decided),
+          "by_someone_else": 0, "by_owner": 0, "owner_unknown": 0}
+    for client, by in decided:
+        owner = owners.get(client)
+        sp["owner_unknown" if not owner else "by_owner" if owner == by else "by_someone_else"] += 1
+    by_action: dict[str, int] = {}
+    for r in policy.rules:
+        by_action[r.get("action", "allow")] = by_action.get(r.get("action", "allow"), 0) + 1
+    people = [m for m in members if m["kind"] == "person"]
+    return {**rep, "version": VERSION, "generated_by": who, "retention_days": RETENTION_DAYS,
+            "second_person": sp,
+            "policy": {"rules": len(policy.rules), "by_action": by_action, "sequences": len(policy.sequences),
+                       "default": policy.default, "mode": policy.mode, "shadow_agents": policy.shadow_agents,
+                       "fingerprint": policy.fingerprint, "versions_in_period": max(versions, 1)},
+            "team": {"people": len(people), "approvers": sum(1 for m in people if m["approver"]),
+                     "admins": sum(1 for m in people if "admin" in m["roles"]), "agents": len(owners),
+                     "agents_with_owner": sum(1 for o in owners.values() if o)},
+            "changes": {"entries": changes, "stops": sum(1 for c in changes if c["action"] == "controls.stopped")}}
+
+
+@app.get("/v1/audit/evidence-pack")
+def evidence_pack(days: int = Query(90, ge=1, le=3650), who: str = Depends(person)):
+    """A printable page for an auditor: controls in place, what happened, and the requirements it speaks to."""
+    with audited_tx() as conn:
+        audit(conn, who, "audit.exported", None, format="evidence-pack", days=days)
+    return Response(evidence.render_html(build_evidence(days, who)), media_type="text/html", headers={
+        "Content-Disposition": f'inline; filename="squidbrake-evidence-pack-{datetime.now():%Y%m%d}.html"'})
 
 
 @app.get("/v1/reports/summary")
@@ -2259,12 +2337,13 @@ def print_banner(url: str | None, created: dict[str, str] | None) -> None:
 def _cli_add_key(args) -> int:
     kind = "person" if (args.person or args.approver or args.role) else "agent"
     try:
-        secret = keystore.add(args.name, approver=args.approver, kind=kind, roles=args.role)
+        secret = keystore.add(args.name, approver=args.approver, kind=kind, roles=args.role, owner=args.owner)
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     with audited_tx() as conn:
-        audit(conn, "command-line", "team.added", args.name, kind=kind, approver=args.approver, roles=args.role or [])
+        audit(conn, "command-line", "team.added", args.name, kind=kind, approver=args.approver, roles=args.role or [],
+              owner=args.owner)
     what = ("person, can approve" if args.approver else "person, can view") if kind == "person" else "agent"
     if args.role:
         what += ", roles: " + ", ".join(args.role)
@@ -2339,11 +2418,21 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--approver", action="store_true", help="a person who may approve/reject held calls")
     a.add_argument("--person", action="store_true", help="a person who can open the dashboard (default: an agent)")
     a.add_argument("--role", action="append", help="a role such as admin or finance (repeatable); implies --person")
+    a.add_argument("--owner", help="for an agent: the person it works for (with second-person approval on, "
+                                   "they can't approve its requests)")
     rm = sub.add_parser("remove-key", help="revoke a key")
     rm.add_argument("name")
     sub.add_parser("keys", help="list keys")
     v = sub.add_parser("verify", help="check an evidence file offline (same as: python verify.py FILE)")
     v.add_argument("file")
+    lk = sub.add_parser("lockdown", help="write the policy files IT pushes to every developer machine so each coding "
+                                         "agent must go through this gateway")
+    lk.add_argument("--url", required=True, help="the gateway's address as developer machines reach it")
+    lk.add_argument("--out", default="squidbrake-lockdown", help="folder to write (default squidbrake-lockdown)")
+    lk.add_argument("--agent", action="append", choices=lockdown.AGENTS, help="only these agents (repeatable; default all)")
+    e = sub.add_parser("evidence", help="write the evidence pack (a printable page for an auditor)")
+    e.add_argument("--days", type=int, default=90, help="period to cover (default 90)")
+    e.add_argument("--out", default=None, help="file to write (default squidbrake-evidence-pack-DATE.html)")
     pl = sub.add_parser("pilot", help="join or leave a pilot: share usage counts (never content) with the Squidbrake team")
     pl.add_argument("action", choices=["join", "leave", "status"])
     pl.add_argument("code", nargs="?", help="the pilot code you were given (join)")
@@ -2354,7 +2443,32 @@ def main(argv: list[str] | None = None) -> int:
         argv = ["run", *argv]  # `python server.py --port 9000` means run
     args = p.parse_args(argv)
     return {"run": _cli_run, "init": _cli_init, "add-key": _cli_add_key, "remove-key": _cli_remove_key,
-            "keys": _cli_keys, "verify": lambda a: verify.main([a.file]), "pilot": _cli_pilot}[args.cmd](args)
+            "keys": _cli_keys, "verify": lambda a: verify.main([a.file]), "pilot": _cli_pilot,
+            "evidence": _cli_evidence, "lockdown": _cli_lockdown}[args.cmd](args)
+
+
+def _cli_lockdown(args) -> int:
+    try:
+        files = lockdown.write(args.url, Path(args.out), args.agent)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(f"Wrote {len(files)} files to {Path(args.out).resolve()}:")
+    for f in files:
+        print(f"  {f}")
+    print("Read its README.md: where each file goes, and the GATEWAY_API_KEY every machine needs.")
+    return 0
+
+
+def _cli_evidence(args) -> int:
+    migrate(engine)
+    out = Path(args.out or f"squidbrake-evidence-pack-{datetime.now():%Y%m%d}.html")
+    with audited_tx() as conn:
+        audit(conn, "command-line", "audit.exported", None, format="evidence-pack", days=args.days)
+    out.write_text(evidence.render_html(build_evidence(args.days, "command-line")), encoding="utf-8")
+    print(f"Evidence pack for the last {args.days} days written to {out.resolve()}\n"
+          f"Open it in a browser; print it to PDF for your auditor.")
+    return 0
 
 
 def _cli_pilot(args) -> int:

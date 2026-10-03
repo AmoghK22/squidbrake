@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "squidbrake"
 dynamic = ["version"]
-description = "Brakes for AI agents: every tool call is checked against your rules, risky ones wait for a human, and everything lands in a tamper-evident audit trail."
+description = "Change control for AI agents: every tool call is checked against your team's rules, risky ones wait for someone else to approve, and everything lands in a tamper-evident audit trail your auditor can check."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -58,6 +58,8 @@ packages = ["squidbrake"]
 "taint.py" = "squidbrake/taint.py"
 "pilot.py" = "squidbrake/pilot.py"
 "verify.py" = "squidbrake/verify.py"
+"evidence.py" = "squidbrake/evidence.py"
+"lockdown.py" = "squidbrake/lockdown.py"
 "connect.py" = "squidbrake/connect.py"
 "claude_hook.py" = "squidbrake/claude_hook.py"
 "agent_hook.py" = "squidbrake/agent_hook.py"
@@ -72,6 +74,6 @@ packages = ["squidbrake"]
 "approve.html" = "squidbrake/approve.html"
 
 [tool.hatch.build.targets.sdist]
-only-include = ["squidbrake", "server.py", "commands.py", "taint.py", "pilot.py", "verify.py", "connect.py", "claude_hook.py", "agent_hook.py",
+only-include = ["squidbrake", "server.py", "commands.py", "taint.py", "pilot.py", "verify.py", "evidence.py", "lockdown.py", "connect.py", "claude_hook.py", "agent_hook.py",
                 "gw_async.py", "gateway_proxy.py", "gateway_mcp.py", "demo_apps_mcp.py", "client.py", "rules.yaml", "rules.shipped",
                 "dashboard.html", "approve.html", "README.md", "LICENSE", "pyproject.toml"]

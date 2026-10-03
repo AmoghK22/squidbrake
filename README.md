@@ -12,10 +12,11 @@
 
 ![Demo: an AI agent's scam wire is blocked, a refund waits for approval and is approved from a phone](https://raw.githubusercontent.com/batrapulkit/squidbrake/main/docs/demo.gif)
 
-**Brakes for your AI agents.** Every action an agent takes (running a command, editing a file, sending an
+**Change control for AI agents.** Every action an agent takes (running a command, editing a file, sending an
 email, issuing a refund, changing a database) goes through Squidbrake first. It is **checked** against your
-rules, **held for a person** when it's risky, **recorded** in a tamper-evident audit trail, and can be
-**stopped** instantly.
+team's rules, **held for someone else to approve** when it's risky, **recorded** in a tamper-evident audit trail
+your auditor can check, and can be **stopped** instantly. One policy for Claude Code, Cursor, Codex, Gemini CLI,
+VS Code Copilot, Antigravity and your MCP tools.
 
 Free and open source (Apache 2.0). Runs on your laptop or your own server; your data never leaves it.
 
@@ -34,9 +35,16 @@ Free and open source (Apache 2.0). Runs on your laptop or your own server; your 
 - **Works with real agents:** `squidbrake connect all` connects Claude Code, Cursor, Codex, Gemini CLI, VS Code
   Copilot and Antigravity (their commands, reads and edits, via hooks) and the MCP servers they already use; any MCP
   app (Stripe, GitHub, Slack, databases, internal tools) can be wrapped too.
-- **For teams:** a key per person and per agent, roles (only `finance` approves wires), an emergency stop (all agents,
-  one agent, or one conversation, which also ends Claude Code's turn),
-  reports, CSV export, and evidence anyone can verify offline (`python verify.py`).
+- **For teams:** one gateway for everyone's laptops (`connect all --url https://gateway.yourcompany.com --key gw_...`, one
+  agent key per person, made in Team with "Works for" set), roles (only `finance` approves wires), **second-person approval** (nobody approves what their
+  own agent asked for), an emergency stop (all agents, one agent, or one conversation, which also ends Claude Code's
+  turn), reports, CSV export, and evidence anyone can verify offline (`python verify.py`).
+- **Can't be switched off:** `squidbrake lockdown --url https://gateway.yourcompany.com` writes the managed-settings
+  files IT pushes to every machine (Claude Code, Codex, Gemini CLI, Cursor), so each agent must run Squidbrake's hook
+  and `--dangerously-skip-permissions` / `--yolo` are turned off. One policy, every agent.
+- **Ready for your auditor:** `squidbrake evidence` (or Reports → Evidence pack) writes one printable page: the
+  controls in place, what was blocked, held and approved and by whom, whether the audit trail is intact, and which
+  SOC 2, ISO/IEC 42001, EU AI Act, CERT-In and RBI requirements those records speak to.
 - **Fails closed:** if Squidbrake is down, guarded tools don't run.
 
 See [SHOWCASE.md](SHOWCASE.md) for a 5-minute demo with a sandbox company, and [incidents/](incidents/) for **9 real

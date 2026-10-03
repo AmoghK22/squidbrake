@@ -472,6 +472,9 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
         <label class="person-only">Access
           <select name="access"><option value="approver">Can approve</option><option value="viewer">Can view only</option></select></label>
         <label class="person-only">Roles <input name="roles" placeholder="e.g. finance, admin"></label>
+        <label class="agent-only" hidden>Works for
+          <select name="owner" id="ownerSel"><option value="">nobody in particular</option></select>
+          <span class="hint">With second-person approval on, this person can't approve what their own agent asks for.</span></label>
         <div class="form-actions"><button class="btn primary" type="submit">Add and create key</button></div>
       </form>
       <div class="newkey" id="newKey" hidden></div>
@@ -487,6 +490,7 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
       <span class="spacer"></span>
       <button class="btn" id="csvBtn">⬇ Download audit CSV</button>
       <button class="btn" id="jsonlBtn">⬇ Download JSONL</button>
+      <button class="btn" id="evidenceBtn" title="A printable page for your auditor: controls in place, what happened, and the requirements it speaks to">📄 Evidence pack</button>
       <button class="btn" id="printBtn">🖨 Print / save PDF</button>
     </div>
     <div class="print-head" id="printHead"></div>
@@ -548,6 +552,8 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
           <select name="notify_as" id="notifyAs"></select>
           <span class="hint">Whoever can see the notification can use its link, so pick the person who owns that phone / channel.</span></label>
         <label class="check"><input type="checkbox" name="weekly_digest"> Post a weekly summary to Slack (Mondays 9:00)</label>
+        <label class="check full"><input type="checkbox" name="second_person"> Second-person approval: nobody approves what their own agent asked for
+          <span class="hint">Set who each agent works for in Team. Approvals then always come from someone else, which is what auditors look for.</span></label>
         <div class="form-actions full">
           <button class="btn primary" type="submit">Save</button>
           <button class="btn" type="button" id="testNotify">Send a test notification</button>
@@ -1536,7 +1542,10 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
     $("#teamSub").textContent = data.managed_by_env ? "managed by the GATEWAY_API_KEYS setting" : `${data.members.length} keys`;
     const admin = me && me.is_admin && !data.managed_by_env;
     $("#addMemberCard").hidden = !admin;
-    const access = (m) => m.kind === "agent" ? "Asks permission" : m.roles.includes("admin") ? "Admin" : m.approver ? "Can approve" : "Can view";
+    const access = (m) => m.kind === "agent" ? (m.owner ? `Asks permission · works for ${m.owner}` : "Asks permission")
+      : m.roles.includes("admin") ? "Admin" : m.approver ? "Can approve" : "Can view";
+    $("#ownerSel").replaceChildren(el("option", { value: "", text: "nobody in particular" }),
+      ...data.members.filter((m) => m.kind === "person").map((m) => el("option", { value: m.name, text: m.name })));
     $("#teamRows").replaceChildren(...data.members.map((m) => el("tr", {},
       el("td", {}, el("b", { text: m.name }), m.name === me.client ? el("span", { class: "muted", text: "  (you)" }) : null),
       el("td", { class: "sec", text: m.kind === "agent" ? "🤖 AI agent" : "👤 Person" }),
@@ -1561,14 +1570,18 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
     apiSend("DELETE", `/v1/team/${encodeURIComponent(m.name)}`).then(() => { toast(`Removed ${m.name}`); loadTeam(); }).catch((err) => toast(err.message));
   }
   const addForm = $("#addMember");
-  const syncKind = () => addForm.querySelectorAll(".person-only").forEach((n) => (n.hidden = addForm.kind.value === "agent"));
+  const syncKind = () => {
+    addForm.querySelectorAll(".person-only").forEach((n) => (n.hidden = addForm.kind.value === "agent"));
+    addForm.querySelectorAll(".agent-only").forEach((n) => (n.hidden = addForm.kind.value !== "agent"));
+  };
   addForm.kind.addEventListener("change", syncKind);
   addForm.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const f = addForm, person = f.kind.value === "person";
     try {
       const r = await apiPost("/v1/team", { name: f.name.value.trim(), kind: f.kind.value, approver: person && f.access.value === "approver",
-        roles: person ? f.roles.value.split(",").map((x) => x.trim()).filter(Boolean) : [] });
+        roles: person ? f.roles.value.split(",").map((x) => x.trim()).filter(Boolean) : [],
+        owner: person ? null : f.owner.value || null });
       const box = $("#newKey");
       box.hidden = false;
       box.replaceChildren(el("b", { text: `Key for ${r.name} — copy it now, it won't be shown again:` }), el("br"), el("code", { text: r.key }), " ",
@@ -1680,12 +1693,24 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
     } catch (err) { toast(err.message); }
   });
 
+  $("#evidenceBtn").addEventListener("click", async () => {
+    try {
+      const res = await fetch(`/v1/audit/evidence-pack?days=${Math.max(repDays, 30)}`, { headers: { "X-Gateway-Key": apiKey } });
+      if (!res.ok) throw new Error(`evidence pack failed (${res.status})`);
+      const url = URL.createObjectURL(await res.blob());
+      el("a", { href: url, download: `squidbrake-evidence-pack-${new Date().toISOString().slice(0, 10)}.html` }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      loadReports();
+    } catch (err) { toast(err.message); }
+  });
+
   // ---------- settings
   const sForm = $("#settingsForm");
   async function loadSettings() {
     const [s, team] = await Promise.all([api("/v1/settings"), api("/v1/team")]);
     for (const k of ["public_url", "ntfy_topic", "slack_webhook"]) sForm[k].value = s[k] || "";
     sForm.weekly_digest.checked = !!s.weekly_digest;
+    sForm.second_person.checked = !!s.second_person;
     const approvers = team.members.filter((m) => m.approver).map((m) => m.name);
     $("#notifyAs").replaceChildren(...approvers.map((n) => el("option", { value: n, text: n, selected: n === s.notify_as ? "" : null })));
   }
@@ -1698,7 +1723,8 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
     ev.preventDefault();
     try {
       await apiSend("PUT", "/v1/settings", { public_url: sForm.public_url.value.trim(), ntfy_topic: sForm.ntfy_topic.value.trim(),
-        slack_webhook: sForm.slack_webhook.value.trim(), notify_as: sForm.notify_as.value || null, weekly_digest: sForm.weekly_digest.checked });
+        slack_webhook: sForm.slack_webhook.value.trim(), notify_as: sForm.notify_as.value || null, weekly_digest: sForm.weekly_digest.checked,
+        second_person: sForm.second_person.checked });
       $("#settingsMsg").textContent = "Saved ✓"; setTimeout(() => ($("#settingsMsg").textContent = ""), 3000);
     } catch (err) { $("#settingsMsg").textContent = err.message; }
   });
