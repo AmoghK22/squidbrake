@@ -1,3 +1,6 @@
+MY_*
+*.pem
+squidbreak-site/
 .venv/
 data/
 .env

@@ -41,7 +41,7 @@ Free and open source (Apache 2.0). Runs on your laptop or your own server; your 
 
 See [SHOWCASE.md](SHOWCASE.md) for a 5-minute demo with a sandbox company, and [incidents/](incidents/) for **9 real
 AI-agent incidents replayed against the shipped rules** (Replit, the Railway volume deletion, GitHub MCP, Supabase
-MCP, Postmark MCP, Claude Code and Antigravity deletes...): 11 of 12 harmful actions stopped, checked in CI.
+MCP, Postmark MCP, Claude Code and Antigravity deletes...): 11 of 12 harmful actions stopped, checked in CI. The same steps through two other guards (destructive_command_guard, Microsoft's Agent Governance Toolkit), plus everyday coding work: [bench/compare/](bench/compare/).
 
 ![Squidbrake dashboard: a git push and a refund wait for approval, while a scam wire transfer was blocked](https://raw.githubusercontent.com/batrapulkit/squidbrake/main/docs/dashboard.png)
 

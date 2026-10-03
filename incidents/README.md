@@ -22,6 +22,8 @@ python incidents/replay.py        # throwaway database; touches nothing else
 
 **11 of 12 harmful actions stopped across 9 incidents** (3 blocked outright, 8 held for a person, 1 not stopped).
 
+How other guards handle the same steps, and how many everyday edits and commands each one holds: [bench/compare/](../bench/compare/).
+
 ## Not stopped (yet)
 
 The Postmark replay uses only synthetic addresses and message content. Squidbrake holds the visible outbound email,
