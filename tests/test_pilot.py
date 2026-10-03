@@ -79,8 +79,9 @@ def test_join_ping_leave(insights, tmp_path, monkeypatch):
     assert p["installs"] == 1 and p["agents"] == {"claude-code": 5} and p["total_events"] == 5
 
     # the weekly scorecard: active today, this week and last week (retention), and how many holds were approved
-    from datetime import date, timedelta
-    today, last_week = date.today().isoformat(), (date.today() - timedelta(days=9)).isoformat()
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)  # pilots and insights both count days in UTC
+    today, last_week = now.strftime("%Y-%m-%d"), (now - timedelta(days=9)).strftime("%Y-%m-%d")
     assert pilot.send(tmp_path, {**usage, "days": {today: {"events": 7, "held": 4, "approved": 3, "rejected": 1, "blocked": 1},
                                                    last_week: {"events": 2}}}) is True
     d = insights.get("/v1/admin/overview", headers=admin).json()
