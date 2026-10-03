@@ -1,5 +1,6 @@
 """
-Pilot programme: share usage COUNTS with the Squidbrake team, only after you join with a code you were given.
+Pilot programme: share usage COUNTS with the Squidbrake team, only after you join: with a code you were given, or
+by saying yes when `squidbrake connect all` asks (once, default no).
 
     squidbrake pilot join CODE --server URL    start sharing (shows exactly what is sent, and asks first)
     squidbrake pilot status                    what is shared, where, and when it was last sent

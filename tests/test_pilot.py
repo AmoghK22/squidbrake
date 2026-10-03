@@ -128,6 +128,29 @@ def test_hosted_pilot_lifecycle(insights):
     assert all(p["code"] != code for p in insights.get("/v1/admin/overview", headers=admin).json()["pilots"])
 
 
+def test_connect_all_offers_counts_once_default_no(tmp_path, monkeypatch, capsys):
+    """Installs that aren't pilots can share counts, but only if they say yes when connect all asks: once,
+    default no, never in scripts, and never again after a no."""
+    import connect
+    import server
+    monkeypatch.setattr(server, "PILOT_DIR", tmp_path)
+    joined = []
+    monkeypatch.setattr(pilot, "_post", lambda srv, path, body: joined.append((srv, body["code"])) or {"company": "Community"})
+
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")                 # just Enter: no
+    connect.offer_counts()
+    assert joined == [] and pilot.load(tmp_path) is None and (tmp_path / "community-asked").exists()
+    assert "Never sent" in capsys.readouterr().out                             # it says what would be sent first
+
+    monkeypatch.setattr("builtins.input", lambda prompt="": pytest.fail("asked twice"))
+    connect.offer_counts()                                                     # a no is remembered
+
+    (tmp_path / "community-asked").unlink()
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+    connect.offer_counts()
+    assert joined == [(connect.COMMUNITY_SERVER, connect.COMMUNITY_CODE)] and pilot.load(tmp_path)["code"] == connect.COMMUNITY_CODE
+
+
 def test_pilot_server_must_be_https_or_internal(tmp_path):
     for bad in ("http://pilots.example.com", "ftp://x", ""):
         assert pilot.join(tmp_path, "c", bad, True, "1") == 2

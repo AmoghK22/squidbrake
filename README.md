@@ -388,12 +388,18 @@ pip install pytest && pytest -q
 python tests/e2e_business_scenario.py
 ```
 
-## Usage sharing (pilots only)
+## Usage sharing (opt-in)
 
-Squidbrake sends nothing anywhere by default. If you join a pilot with a code you were given
-(`squidbrake pilot join CODE --server URL`), it shows exactly what it will share and asks first: usage **counts**
-(actions allowed, held, approved, blocked per day; which agents and rules), never commands, code, prompts or keys.
-`squidbrake pilot leave` stops it. Details: [`pilot.py`](pilot.py) and [`insights/`](insights/).
+Squidbrake sends nothing anywhere by default. There are two ways to share, and both show exactly what will be sent
+and ask first (the default answer is no):
+
+- `squidbrake connect all`, run in a terminal, asks once at the end whether to share counts with the Squidbrake
+  team. It never asks again after a no, and never asks with `--yes` or in scripts.
+- A pilot joins with the code they were given: `squidbrake pilot join CODE --server URL`.
+
+What is shared is usage **counts**: actions allowed, held, approved and blocked per day, and which agents and
+rules. Never commands, code, prompts or keys. `squidbrake pilot leave` stops it. Details: [`pilot.py`](pilot.py)
+and [`insights/`](insights/).
 
 ## Roadmap
 

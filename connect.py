@@ -601,6 +601,25 @@ def connect_all(args) -> None:
     agents(each)
     print("\nMCP servers")
     guard(each)
+    if not args.remove and not args.yes and sys.stdin.isatty():
+        offer_counts()
+
+
+# Counts from installs that aren't pilots: asked once, default no, never in scripts (--yes) or without a terminal
+COMMUNITY_SERVER, COMMUNITY_CODE = "https://pilots.squidbrake.com", "community-opt-in-ins-a42929"
+
+
+def offer_counts() -> None:
+    import pilot
+    import server
+    asked = server.PILOT_DIR / "community-asked"
+    if pilot.load(server.PILOT_DIR) or asked.exists():       # already sharing (e.g. a pilot), or asked before
+        return
+    print("\nOne optional thing: the Squidbrake team can't see installs like this one, only pilots.")
+    pilot.join(server.PILOT_DIR, COMMUNITY_CODE, COMMUNITY_SERVER, False, server.VERSION)
+    asked.parent.mkdir(parents=True, exist_ok=True)
+    asked.write_text("asked once; to share later: squidbrake pilot join " + COMMUNITY_CODE +
+                     " --server " + COMMUNITY_SERVER + "\n", encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> None:
