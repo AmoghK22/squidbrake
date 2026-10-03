@@ -744,7 +744,7 @@ def test_second_person_approval(c, org, monkeypatch):
     c.put("/v1/settings", headers=org["admin"], json={"second_person": False})
 
 
-def test_evidence_pack(c, org, tmp_path):
+def test_evidence_pack(c, org, tmp_path, monkeypatch):
     r = c.post("/v1/team", headers=org["admin"], json={"name": "ev-laptop", "kind": "agent", "owner": "admin"}).json()
     laptop = {"X-Gateway-Key": r["key"]}
     eid = c.post("/v1/events", headers=laptop, json={"name": "payments.refund"}).json()["event_id"]
@@ -760,6 +760,25 @@ def test_evidence_pack(c, org, tmp_path):
     assert ev["second_person"]["by_someone_else"] >= 1 and ev["team"]["agents_with_owner"] >= 1
     assert ev["policy"]["rules"] == len(server.policy.rules)
     assert "<script" not in html  # a static page: names and reasons are escaped, nothing runs
+    # `squidbrake evidence` runs in a fresh process, before anything has loaded rules.yaml
+    monkeypatch.setattr(server, "policy", server.Policy(server.RULES_PATH))
+    out = tmp_path / "pack.html"
+    assert server._cli_evidence(server.argparse.Namespace(days=30, out=str(out))) == 0
+    assert server.policy.rules and f"{len(server.policy.rules)} rules:" in out.read_text(encoding="utf-8")
+
+
+def test_reported_effects_are_shown_but_never_decide(c, org):
+    lost = "Removes 2 commits from origin/main that this branch doesn't have (as of your last fetch): fix, feat"
+    d = c.post("/v1/events", headers=org["agent"], json={"name": "payments.refund", "metadata": {"effects": [lost, 7]}}).json()
+    assert d["decision"] == "review"
+    [sig] = [s for s in d["signals"] if s["check"] == "effect"]
+    assert sig == {"check": "effect", "effect": "info", "message": lost}
+    row = server.row_to_dict(server.engine.connect().execute(
+        server.select(server.events).where(server.events.c.id == d["event_id"])).first())
+    assert "What it changes: Removes 2 commits" in server.approval_message({**row, "signals": server.json.dumps(row["signals"])})[1]
+    # an allowed action stays allowed, whatever the machine reports
+    assert c.post("/v1/events", headers=org["agent"], json={"name": "t", "metadata": {"effects": ["Deletes 9 files"]}}).json()["decision"] == "allow"
+    assert server.reported_effects({"effects": "not a list"}) is None
 
 
 def test_emergency_stop(c, org):

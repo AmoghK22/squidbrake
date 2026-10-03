@@ -60,6 +60,8 @@ packages = ["squidbrake"]
 "verify.py" = "squidbrake/verify.py"
 "evidence.py" = "squidbrake/evidence.py"
 "lockdown.py" = "squidbrake/lockdown.py"
+"effects.py" = "squidbrake/effects.py"
+"undo.py" = "squidbrake/undo.py"
 "connect.py" = "squidbrake/connect.py"
 "claude_hook.py" = "squidbrake/claude_hook.py"
 "agent_hook.py" = "squidbrake/agent_hook.py"
@@ -74,6 +76,6 @@ packages = ["squidbrake"]
 "approve.html" = "squidbrake/approve.html"
 
 [tool.hatch.build.targets.sdist]
-only-include = ["squidbrake", "server.py", "commands.py", "taint.py", "pilot.py", "verify.py", "evidence.py", "lockdown.py", "connect.py", "claude_hook.py", "agent_hook.py",
+only-include = ["squidbrake", "server.py", "commands.py", "taint.py", "pilot.py", "verify.py", "evidence.py", "lockdown.py", "effects.py", "undo.py", "connect.py", "claude_hook.py", "agent_hook.py",
                 "gw_async.py", "gateway_proxy.py", "gateway_mcp.py", "demo_apps_mcp.py", "client.py", "rules.yaml", "rules.shipped",
                 "dashboard.html", "approve.html", "README.md", "LICENSE", "pyproject.toml"]

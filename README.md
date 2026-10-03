@@ -39,6 +39,10 @@ Free and open source (Apache 2.0). Runs on your laptop or your own server; your 
   agent key per person, made in Team with "Works for" set), roles (only `finance` approves wires), **second-person approval** (nobody approves what their
   own agent asked for), an emergency stop (all agents, one agent, or one conversation, which also ends Claude Code's
   turn), reports, CSV export, and evidence anyone can verify offline (`python verify.py`).
+- **Shows what it will change, and keeps an undo:** before a risky command, the approver sees it measured on the
+  developer's machine ("removes 3 commits from origin/main: fix login, ...", "deletes 1,204 files (56 MB) in data").
+  Right before an approved delete, `git reset --hard` or `git clean` runs, Squidbrake keeps a copy;
+  `squidbrake undo` lists them and `squidbrake undo ID` puts one back.
 - **Can't be switched off:** `squidbrake lockdown --url https://gateway.yourcompany.com` writes the managed-settings
   files IT pushes to every machine (Claude Code, Codex, Gemini CLI, Cursor), so each agent must run Squidbrake's hook
   and `--dangerously-skip-permissions` / `--yolo` are turned off. One policy, every agent.

@@ -9,6 +9,7 @@ The `squidbrake` command (installed with pip):
   squidbrake agent-hook AGENT        the hook for cursor, codex, gemini-cli, vscode, antigravity
   squidbrake lockdown --url URL      policy files IT pushes to every machine so agents can't skip the gateway
   squidbrake evidence --days 90      a printable evidence pack for your auditor
+  squidbrake undo [ID]               list, or put back, what an agent deleted or overwrote
   squidbrake proxy --app NAME -- CMD an MCP server that checks every call to the app's MCP server CMD first
                                      (same as: python gateway_proxy.py ...)
   squidbrake pilot join CODE --server URL   share usage counts with a pilot (asks first; see pilot.py)
@@ -48,6 +49,9 @@ def main() -> int:
         import agent_hook
         agent_hook.main()
         return 0
+    if argv[:1] == ["undo"]:  # list or restore what an agent deleted or overwrote (see undo.py)
+        import undo
+        return undo.main(argv[1:])
     if argv[:1] == ["proxy"]:  # an MCP server: put Squidbrake in front of any app's MCP server
         sys.argv = ["squidbrake proxy", *argv[1:]]
         import gateway_proxy

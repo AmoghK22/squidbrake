@@ -1294,7 +1294,7 @@ dialog input#stopReason { width: 100%; border: 1px solid var(--border); backgrou
       el("div", { class: "muted", style: "margin-top:4px", text: `Held by: ${e.reason || ""}${e.rule_id ? " (" + e.rule_id + ")" : ""}` }));
   }
   // ---------- the story behind an action: history-check warnings + what the agent did just before
-  const SIGNAL_TITLES = {
+  const SIGNAL_TITLES = { effect: "What it changes",
     impersonation: "Possible scam", payment_request_in_message: "Payment requested in a message",
     repeat_of_rejected: "Already rejected before", duplicate_change: "Done before",
     catastrophic_command: "Destructive command", irreversible_command: "Can't be undone", hidden_command: "Hidden code", sequence: "Pattern", untrusted_destination: "Address from outside content", after_untrusted: "After reading outside content",

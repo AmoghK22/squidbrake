@@ -15,6 +15,10 @@ from __future__ import annotations
 from html import escape
 
 
+def _n(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
 def _pct(part: int, whole: int) -> str:
     return f"{round(100 * part / whole)}%" if whole else "n/a"
 
@@ -24,7 +28,8 @@ def mapping(ev: dict) -> list[dict]:
     a, sp, p, t = ev["approvals"], ev["second_person"], ev["policy"], ev["team"]
     stops = ev["changes"]["stops"]
     chain = "intact" if ev["audit"]["ok"] else "BROKEN"
-    keys = (f"{t['people']} people ({t['approvers']} can approve, {t['admins']} admins) and {t['agents']} agent keys, "
+    keys = (f"{_n(t['people'], 'person') if t['people'] == 1 else str(t['people']) + ' people'} ({t['approvers']} can approve, "
+            f"{_n(t['admins'], 'admin')}) and {_n(t['agents'], 'agent key')}, "
             f"{t['agents_with_owner']} of them tied to the person they work for")
     oversight = (f"{a['held']} actions held for a person; {a['approved']} approved, {a['rejected']} rejected, "
                  f"{a['timed_out']} timed out. {_pct(sp['by_someone_else'], sp['by_someone_else'] + sp['by_owner'])} of decisions on agents "
@@ -70,7 +75,7 @@ def _table(head: list[str], rows: list[list], empty: str = "None in this period.
 def render_html(ev: dict) -> str:
     a, sp, p, t, ch = ev["approvals"], ev["second_person"], ev["policy"], ev["team"], ev["changes"]
     ok = ev["audit"]["ok"]
-    tiles = [("Actions recorded", ev["total"]), ("Blocked", ev["by_status"].get("denied", 0)),
+    tiles = [("Actions recorded", ev["total"]), ("Blocked or rejected", ev["by_status"].get("denied", 0)),
              ("Held for a person", a["held"]), ("Approved / rejected", f"{a['approved']} / {a['rejected']}"),
              ("Decided by someone else", _pct(sp["by_someone_else"], sp["by_someone_else"] + sp["by_owner"])),
              ("Audit trail", "intact" if ok else "BROKEN")]
@@ -94,7 +99,7 @@ th {{ background: #f6f6f7; }} code {{ font-size: 12px; word-break: break-all; }}
 @media print {{ body {{ margin: 0; }} h2 {{ break-after: avoid; }} tr {{ break-inside: avoid; }} }}
 </style></head><body>
 <h1>AI agent evidence pack</h1>
-<div class="muted">Squidbrake {escape(ev['version'])} · period {escape(ev['since'][:10])} to {escape(ev['generated_at'][:10])} ({ev['days']} days)
+<div class="muted">Squidbrake {escape(ev['version'])} · period {escape(ev['since'][:10])} to {escape(ev['generated_at'][:10])} ({ev['days']} day{'s' if ev['days'] != 1 else ''})
  · generated {escape(ev['generated_at'])} by {escape(ev['generated_by'])}</div>
 <div class="tiles">{tiles_html}</div>
 
@@ -113,7 +118,7 @@ It needs no access to this system.</p>
     ["Mode", p["mode"] + (f" (shadow for: {', '.join(p['shadow_agents'])})" if p["shadow_agents"] else "")],
     ["Rules fingerprint now", p["fingerprint"]],
     ["Second-person approval", "on: nobody approves their own agent's request" if sp["enforced"] else "off"],
-    ["People and agents", f"{t['people']} people ({t['approvers']} approvers, {t['admins']} admins); {t['agents']} agents, {t['agents_with_owner']} with an owner"],
+    ["People and agents", f"{t['people']} people ({_n(t['approvers'], 'approver')}, {_n(t['admins'], 'admin')}); {_n(t['agents'], 'agent')}, {t['agents_with_owner']} with an owner"],
     ["When Squidbrake is unreachable", "agent hooks block the action (fail closed) unless GATEWAY_FAIL_OPEN is set on that machine"],
     ["Record retention", "forever" if not ev["retention_days"] else f"{ev['retention_days']} days"],
 ])}

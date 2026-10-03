@@ -24,6 +24,12 @@ import time
 
 import httpx
 
+try:  # what a command will change, and an undo for what it destroys (both best effort, never fatal)
+    import effects
+    import undo
+except Exception:  # pragma: no cover
+    effects = undo = None
+
 AGENTS = ("cursor", "gemini-cli", "codex", "vscode", "antigravity")
 
 
@@ -122,6 +128,14 @@ def unreachable(url: str, e: httpx.HTTPError, what: str = "action") -> str:
 
 def check(agent: str, name: str, inp: dict, session: str | None) -> None:
     body = {"name": name, "kind": "agent_hook", "input": inp, "source": agent, "session_id": session}
+    line = inp.get("command") if name == "Bash" and effects is not None else None
+    cwd = inp.get("cwd") or os.getcwd()
+    if line:
+        try:
+            if found := effects.predict(line, cwd):
+                body["metadata"] = {"effects": found}
+        except Exception:
+            pass
     try:
         with httpx.Client(base_url=URL, headers={"X-Gateway-Key": KEY}, timeout=15) as http:
             r = http.post("/v1/events", json=body)
@@ -143,6 +157,8 @@ def check(agent: str, name: str, inp: dict, session: str | None) -> None:
             answer(agent, True)
         answer(agent, False, unreachable(URL, e))
     if d["decision"] == "allow":
+        if line and (kept := undo.snapshot(line, cwd)):
+            print(undo.describe(kept), file=sys.stderr)
         answer(agent, True)
     if d["decision"] == "review":
         answer(agent, False, "Squidbrake: nobody approved this in time. Ask the user to approve it in the dashboard, then try again.")

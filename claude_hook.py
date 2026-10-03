@@ -25,6 +25,13 @@ from pathlib import Path
 
 import httpx
 
+try:  # what a command will change, and an undo for what it destroys (both best effort, never fatal)
+    import commands
+    import effects
+    import undo
+except Exception:  # pragma: no cover
+    commands = effects = undo = None
+
 def _arg(flag: str, env: str, default: str) -> str:
     # Claude Code hook config has no env field, so connect.py passes settings as arguments.
     # Installed as a Claude Code plugin, they come from the plugin's settings instead.
@@ -68,13 +75,26 @@ def unreachable(url: str, e: httpx.HTTPError, what: str = "action") -> str:
             f"squidbrake connect all --remove")
 
 
+def shell_command(ev: dict) -> str | None:
+    if commands is None or ev.get("tool_name") not in ("Bash", "PowerShell"):
+        return None
+    return commands.command_of(ev.get("tool_input"))
+
+
 def pre(ev: dict, http: httpx.Client) -> None:
+    line = shell_command(ev)
     body = {
         "name": ev.get("tool_name", "unknown"), "kind": "claude_code", "input": ev.get("tool_input"),
         "source": SOURCE, "session_id": ev.get("session_id"),
         "metadata": {"cwd": ev.get("cwd"), "permission_mode": ev.get("permission_mode"),
                      "tool_use_id": ev.get("tool_use_id")},
     }
+    if line:
+        try:
+            if found := effects.predict(line, ev.get("cwd")):
+                body["metadata"]["effects"] = found
+        except Exception:
+            pass
     try:
         r = http.post("/v1/events", json=body)
         if r.status_code == 401:
@@ -110,6 +130,8 @@ def pre(ev: dict, http: httpx.Client) -> None:
     if ev.get("tool_use_id"):
         STATE_DIR.mkdir(exist_ok=True)
         (STATE_DIR / f"{ev['tool_use_id']}.json").write_text(json.dumps({"event_id": d["event_id"], "t0": time.time()}))
+    if line and (kept := undo.snapshot(line, ev.get("cwd"))):
+        print(json.dumps({"systemMessage": undo.describe(kept)}))
 
 
 def post(ev: dict, http: httpx.Client, failed: bool = False) -> None:

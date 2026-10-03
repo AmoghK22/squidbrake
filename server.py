@@ -1187,6 +1187,14 @@ def taint_signals(conn, ev: "EventIn", client: str) -> list[dict]:
     return out
 
 
+def reported_effects(metadata: dict | None) -> str | None:
+    """What the hook measured on the developer's machine (effects.py): "Removes 3 commits from origin/main ...".
+    Shown to the approver as reported by that machine; it never changes the decision."""
+    found = (metadata or {}).get("effects")
+    lines = [str(x)[:400] for x in found if isinstance(x, str) and x.strip()][:5] if isinstance(found, list) else []
+    return "; ".join(lines) or None
+
+
 def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
     signals: list[dict] = []
     if stop := stopped_for(ev.source, client, ev.session_id):
@@ -1226,6 +1234,8 @@ def record_event(ev: EventIn, client: str, client_ip: str | None) -> Decision:
                 # Nothing matched but the default, and the command only looks: don't make a person approve `ls`.
                 decision, reason, rule_id = "allow", "Only reads (like ls, cat, grep, git status), so it runs without asking", \
                     "command:read_only"
+    if effect := reported_effects(ev.metadata):
+        signals.append({"check": "effect", "effect": "info", "message": effect})
     would = None
     # Shadow mode lets it through but records what would have happened. Stops and catastrophic commands still apply.
     if decision in ("deny", "review") and rule_id not in ("emergency-stop", "session-stop", "command:catastrophic_command")             and policy.shadow_for(ev.source, client):
@@ -1346,6 +1356,9 @@ def approval_message(row: dict) -> tuple[str, str]:
     who = row["source"] or row["client"]
     title = f"Approve {row['name']}?"
     body = f"{who} wants to run {row['name']} ({row['reason']}).\n{_preview(row['input'])}"
+    for s in json.loads(row.get("signals") or "[]"):
+        if s.get("check") == "effect":
+            body += f"\nWhat it changes: {s['message']}"
     return title, body
 
 
@@ -1989,6 +2002,7 @@ CONTROL_CHANGES = ("team.", "settings.", "controls.", "policy.version")
 
 def build_evidence(days: int, who: str) -> dict:
     """The numbers behind the evidence pack (evidence.py renders them)."""
+    policy._maybe_reload()  # from the command line nothing has evaluated an action yet, so load rules.yaml now
     rep = build_report(days)
     since = rep["since"]
     with engine.connect() as conn:
