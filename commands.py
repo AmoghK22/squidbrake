@@ -306,7 +306,8 @@ def classify(words: list[str], raw: str = "", depth: int = 0) -> tuple[list[Comm
             and any(_is_catastrophic_target(p) for p in _positional(words)):
         cmd.kind, cmd.why = "catastrophic", f"changes permissions on the whole system ({' '.join(words)})"
         return [cmd], []
-    if prog in ("format-volume", "clear-disk") and any(w.startswith("-") for w in words[1:]):
+    # piped (Get-Partition -DriveLetter D | Format-Volume) or positional (Format-Volume D) wipes too; only help doesn't
+    if prog in ("format-volume", "clear-disk") and not any(w in ("-?", "-help", "/?") for w in lower[1:]):
         cmd.kind, cmd.why = "catastrophic", f"wipes a whole disk ({' '.join(words[:3])})"
         return [cmd], []
 

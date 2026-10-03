@@ -26,7 +26,8 @@ def kind(line):
     "dd if=/dev/zero of=/dev/sda bs=1M", "mkfs.ext4 /dev/sdb1", "wipefs -a /dev/sda", "format D:", "chmod -R 777 /",
     "diskutil eraseDisk JHFS+ X disk2", "diskutil eraseVolume APFS X disk2s1", "diskutil secureErase 0 disk2",
     "sudo /usr/sbin/diskutil eraseDisk APFS X disk2",
-    "Format-Volume -DriveLetter D", "Clear-Disk -Number 1 -RemoveData",
+    "Format-Volume -DriveLetter D", "Clear-Disk -Number 1 -RemoveData", "Format-Volume D",
+    "Get-Partition -DriveLetter D | Format-Volume", "Get-Disk 1 | Clear-Disk",
 ])
 def test_catastrophic(line):
     assert kind(line) == "catastrophic", commands.read(line).summary()
@@ -115,7 +116,7 @@ def test_macos_disk_inspection_is_not_destructive(line):
 
 
 @pytest.mark.parametrize("line", ["Get-Volume", "vssadmin list shadows", "reg query HKLM\\Software\\X",
-                                 "vssadmin list shadows /for=C:", "reg export HKLM\\X backup.reg"])
+                                 "vssadmin list shadows /for=C:", "reg export HKLM\\X backup.reg", "Format-Volume -?"])
 def test_windows_inspection_is_not_destructive(line):
     assert kind(line) not in ("catastrophic", "irreversible")
 
