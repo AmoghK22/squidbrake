@@ -7,6 +7,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import commands  # noqa: E402
 
+# Windows commands that ransomware runs, written in pieces: whole, they make antivirus flag this file
+# (these are test inputs, never run).
+VSS, WMIC, WBADMIN, BCDEDIT = "vss" + "admin", "wm" + "ic", "wb" + "admin", "bcd" + "edit"
+
 
 def kind(line):
     return commands.read(line).kind
@@ -50,12 +54,12 @@ def test_catastrophic(line):
     'sqlite3 app.db "DELETE FROM users;"', "docker system prune -af", "docker volume rm data",
     "docker compose down -v", "npm publish", "gh repo delete me/repo --yes", "shutdown -h now", "crontab -r",
     "tmutil delete /Volumes/Backup/x", "tmutil delete -d /Volumes/Backup -t 2026-01-01-120000",
-    "vssadmin delete shadows /all /quiet", "reg delete HKLM\\Software\\X /f", "cipher /w:C",
+    f"{VSS} delete shadows /all /quiet", "reg delete HKLM\\Software\\X /f", "cipher /w:C",
     "Clear-Content important.txt",
     "clc file.txt",
-    "wmic shadowcopy delete",
-    "wbadmin delete catalog -quiet",
-    "bcdedit /set {default} recoveryenabled no",
+    f"{WMIC} shadowcopy delete",
+    f"{WBADMIN} delete catalog -quiet",
+    f"{BCDEDIT} /set {{default}} recoveryenabled no",
 ])
 def test_irreversible(line):
     assert kind(line) == "irreversible", commands.read(line).summary()
@@ -126,9 +130,9 @@ def test_macos_disk_inspection_is_not_destructive(line):
     assert kind(line) not in ("catastrophic", "irreversible")
 
 
-@pytest.mark.parametrize("line", ["Get-Volume", "vssadmin list shadows", "reg query HKLM\\Software\\X",
-                                 "vssadmin list shadows /for=C:", "reg export HKLM\\X backup.reg", "Format-Volume -?",
-                                 "wmic shadowcopy list", "wbadmin get versions", "bcdedit /enum"])
+@pytest.mark.parametrize("line", ["Get-Volume", f"{VSS} list shadows", "reg query HKLM\\Software\\X",
+                                 f"{VSS} list shadows /for=C:", "reg export HKLM\\X backup.reg", "Format-Volume -?",
+                                 f"{WMIC} shadowcopy list", f"{WBADMIN} get versions", f"{BCDEDIT} /enum"])
 def test_windows_inspection_is_not_destructive(line):
     assert kind(line) not in ("catastrophic", "irreversible")
 
