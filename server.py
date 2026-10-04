@@ -1377,9 +1377,20 @@ def notify_approval_needed(row: dict) -> None:
     def send():
         if cfg["slack_webhook"]:
             try:
-                if "discord.com/api/webhooks/" in cfg["slack_webhook"]:
+                if any(host in cfg["slack_webhook"] for host in (
+                        "discord.com/api/webhooks/", "discordapp.com/api/webhooks/")):
+                    link_message = f"[Review and approve or reject]({link}) (expires {expires})"
+                    content_limit = 1999
+                    prefix = f"**{title}**\n"
+                    suffix = f"\n{link_message}"
+                    prefix = prefix[:max(0, content_limit - len(suffix))]
+                    body_limit = max(0, content_limit - len(prefix) - len(suffix))
+                    discord_body = body
+                    if len(body) > body_limit:
+                        discord_body = body[:body_limit - 1] + "…" if body_limit else ""
                     payload = {
-                        "content": f"**{title}**\n{body}\n[Review and approve or reject]({link}) (expires {expires})",
+                        "content": f"{prefix}{discord_body}{suffix}",
+                        "allowed_mentions": {"parse": []},
                     }
                 else:
                     payload = {

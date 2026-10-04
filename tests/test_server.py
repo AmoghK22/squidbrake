@@ -253,7 +253,38 @@ def test_approval_webhook(c, monkeypatch):
     assert got["json"]["event"]["rule_id"] == "pay"
 
 
-def test_discord_approval_webhook(c, monkeypatch):
+@pytest.mark.parametrize("webhook", [
+    "https://discord.com/api/webhooks/123/token",
+    "https://discordapp.com/api/webhooks/123/token",
+])
+def test_discord_approval_webhook(c, monkeypatch, webhook):
+    import threading
+    got, done = {}, threading.Event()
+
+    def fake_post(url, json, timeout):
+        got.update(url=url, json=json)
+        done.set()
+        return httpx.Response(200, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(server, "settings", lambda: {
+        "public_url": "https://gw.test", "slack_webhook": webhook, "ntfy_topic": "",
+        "ntfy_server": "https://ntfy.sh", "notify_as": "admin", "weekly_digest": True,
+    })
+    monkeypatch.setattr(server, "approval_message", lambda row: (
+        "Approve payments.refund?", "Agent input contains @everyone and @here."
+    ))
+    monkeypatch.setattr(server.httpx, "post", fake_post)
+    eid = _held(c, "payments.refund")
+    assert done.wait(3)
+    assert got["url"] == webhook
+    assert "text" not in got["json"]
+    assert got["json"]["allowed_mentions"] == {"parse": []}
+    assert "@everyone" in got["json"]["content"] and "@here" in got["json"]["content"]
+    link = re.search(r"\]\((https://gw\.test/a/[^)]+)\)", got["json"]["content"]).group(1)
+    assert server.read_link_token(link.rsplit("/", 1)[1]) == (eid, "admin")
+
+
+def test_discord_approval_webhook_truncates_body_and_keeps_link(c, monkeypatch):
     import threading
     got, done = {}, threading.Event()
 
@@ -267,13 +298,16 @@ def test_discord_approval_webhook(c, monkeypatch):
         "public_url": "https://gw.test", "slack_webhook": webhook, "ntfy_topic": "",
         "ntfy_server": "https://ntfy.sh", "notify_as": "admin", "weekly_digest": True,
     })
+    monkeypatch.setattr(server, "approval_message", lambda row: ("Approve?", "Agent input " + "x" * 2500))
     monkeypatch.setattr(server.httpx, "post", fake_post)
     eid = _held(c, "payments.refund")
     assert done.wait(3)
-    assert got["url"] == webhook
-    assert "text" not in got["json"]
-    link = re.search(r"\]\((https://gw\.test/a/[^)]+)\)", got["json"]["content"]).group(1)
+
+    content = got["json"]["content"]
+    assert len(content) < 2000
+    link = re.search(r"\]\((https://gw\.test/a/[^)]+)\)", content).group(1)
     assert server.read_link_token(link.rsplit("/", 1)[1]) == (eid, "admin")
+    assert content.endswith(f"(expires {c.get(f'/v1/events/{eid}', headers=H).json()['approval_deadline']})")
 
 
 def test_me(c):
